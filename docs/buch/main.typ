@@ -3,7 +3,7 @@
 #cover(
   [Kubernetes\ absichern],
   [Eine durchgängige Security-Architektur auf k3s, Befehl für Befehl aufgebaut],
-  [Für Thomas Zachmann],
+  [Thomas Zachmann],
   [Stand: 6. November 2026],
 )
 
@@ -31,3 +31,25 @@
 #include "kapitel/15-openbao.typ"
 #include "kapitel/16-eso.typ"
 #include "kapitel/17-anhang.typ"
+
+#rueckseite(
+  [Kubernetes absichern],
+  [
+    Ein leerer Ubuntu-Server, ein Laptop und ein Ziel: ein Kubernetes-Cluster, dem du vertrauen kannst.
+
+    Dieses Buch baut mit dir Schicht für Schicht eine durchgängige Security-Architektur auf k3s auf. Kein langes Skript zum Abtippen, sondern jeder Befehl einzeln und mit einer Erklärung, warum er nötig ist und woran du erkennst, dass er gewirkt hat.
+  ],
+  (
+    ([Fundament], [k3s mit Cilium statt Flannel und kube-proxy]),
+    ([Zugriff], [RBAC und Pod Security Admission]),
+    ([Regeln], [Kyverno und Cilium Default-Deny]),
+    ([Laufzeit], [Falco erkennt verdächtiges Verhalten]),
+    ([Schwachstellen], [Trivy Operator scannt laufend]),
+    ([Nachweis], [Audit-Logs, Grafana, Loki und Tempo]),
+    ([Praxis], [Eine Angriffsübung gegen das eigene Cluster]),
+  ),
+  [Hands-on-Handbuch · Stand: 6. November 2026],
+  autor: [Thomas Zachmann],
+  autor-bild: "bilder/autor.jpg",
+  autor-text: [Autor auf Leanpub],
+)

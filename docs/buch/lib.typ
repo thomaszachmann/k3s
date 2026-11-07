@@ -179,6 +179,69 @@
   ]
 }
 
+// Rückseite: greift die Ringe der Vorderseite auf, angeschnitten unten links.
+#let rueckseite(titel, klappentext, inhalt, fusszeile, autor: none, autor-bild: none, autor-text: none) = {
+  set page(width: 19cm, height: 25cm, fill: papier, margin: 0pt, header: none, footer: none, numbering: none)
+  let mitte-x = 2.4cm
+  let mitte-y = 22.6cm
+  let ringe = (
+    (4.6cm, rgb("#e9efe9")),
+    (3.6cm, rgb("#dbe8e3")),
+    (2.6cm, rgb("#c5dcd6")),
+    (1.6cm, rgb("#9fc6be")),
+    (0.7cm, akzent),
+  )
+  block(width: 100%, height: 100%, clip: true)[
+    #for (r, farbe) in ringe {
+      place(top + left, dx: mitte-x - r, dy: mitte-y - r, circle(radius: r, fill: farbe))
+    }
+    #place(top + left, dx: 2.1cm, dy: 2.4cm)[
+      #block(width: 14.8cm)[
+        #set par(justify: false)
+        #text(font: sans, size: 9.5pt, weight: "semibold", fill: akzent, tracking: 1.3pt)[#upper(titel)]
+        #v(0.6cm)
+        #set par(leading: 0.62em, spacing: 0.9em)
+        #text(font: serif, size: 15pt, fill: tinte)[#klappentext]
+        #v(0.9cm)
+        #text(font: sans, size: 8.5pt, weight: "semibold", fill: grau, tracking: 1.1pt)[AUS DEM INHALT]
+        #v(0.3cm)
+        #set text(font: sans, size: 10pt, fill: tinte)
+        #grid(
+          columns: (auto, 1fr),
+          column-gutter: 0.55cm,
+          row-gutter: 0.42cm,
+          ..inhalt.map(((k, t)) => (
+            text(fill: akzent, weight: "semibold")[#k], t,
+          )).flatten(),
+        )
+      ]
+    ]
+    #if autor-bild != none {
+      place(bottom + right, dx: -2.1cm, dy: -3.3cm, block(width: 10.5cm)[
+        #set par(justify: false, leading: 0.55em)
+        #grid(
+          columns: (1fr, 2.6cm),
+          column-gutter: 0.5cm,
+          align: (right + horizon, horizon),
+          [
+            #text(font: sans, size: 10.5pt, weight: "semibold", fill: tinte)[#autor] \
+            #text(font: sans, size: 9pt, fill: grau)[#autor-text]
+          ],
+          box(
+            width: 2.6cm, height: 2.6cm, radius: 1.3cm, clip: true,
+            stroke: 2pt + white,
+            image(autor-bild, width: 100%, height: 100%, fit: "cover"),
+          ),
+        )
+      ])
+    }
+    #place(bottom + right, dx: -2.1cm, dy: -2.1cm)[
+      #set par(justify: false)
+      #align(right, text(font: sans, size: 8.5pt, fill: grau)[#fusszeile])
+    ]
+  ]
+}
+
 #let buch(body) = {
   set document(title: "Kubernetes absichern", author: "Thomas Zachmann")
   set text(font: serif, size: 10.2pt, fill: tinte, lang: "de", region: "DE", hyphenate: true)
