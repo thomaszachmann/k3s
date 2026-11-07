@@ -1,0 +1,35 @@
+# Overlay for the existing "kps" Helm release. Apply with --reuse-values so the
+# Grafana admin password stays in the release and out of this file.
+prometheus:
+  # Headless service (grpc 10901) through which Thanos Query finds the sidecar.
+  thanosService:
+    enabled: true
+  thanosServiceMonitor:
+    enabled: true
+    # The official dashboards filter on job=~".*thanos-sidecar.*", while the
+    # chart's service is called ...-thanos-discovery. Without this the sidecar
+    # dashboard stays empty.
+    relabelings:
+      - targetLabel: job
+        replacement: thanos-sidecar
+  prometheusSpec:
+    # Deliberately short: anything older than this can only come from S3.
+    retention: 6h
+    thanos:
+      version: v0.42.5
+      objectStorageConfig:
+        existingSecret:
+          name: thanos-objstore
+          key: objstore.yml
+
+grafana:
+  additionalDataSources:
+    - name: Thanos
+      uid: thanos
+      type: prometheus
+      access: proxy
+      url: http://thanos-query.monitoring.svc.cluster.local:10902
+      editable: false
+      jsonData:
+        prometheusType: Thanos
+        timeInterval: 30s

@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: gut
+  namespace: demo
+  labels:
+    team: plattform
+spec:
+  containers:
+    - name: web
+      image: nginxinc/nginx-unprivileged:1.29-alpine
+      resources:
+        limits:
+          memory: 64Mi

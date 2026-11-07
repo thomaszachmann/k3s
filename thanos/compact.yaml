@@ -1,0 +1,98 @@
+# Thanos Compactor: merges small blocks in S3 and enforces retention.
+# Must be a singleton per bucket: two compactors would corrupt the data.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: thanos-compact
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/name: thanos-compact
+    app.kubernetes.io/part-of: thanos
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: thanos-compact
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: thanos-compact
+        app.kubernetes.io/part-of: thanos
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1001
+        runAsGroup: 1001
+        fsGroup: 1001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: thanos-compact
+          image: quay.io/thanos/thanos:v0.42.5
+          args:
+            - compact
+            - --log.level=info
+            - --wait
+            - --wait-interval=5m
+            - --data-dir=/data
+            - --http-address=0.0.0.0:10902
+            - --objstore.config-file=/etc/thanos/objstore.yml
+            # Downsampling would add extra blocks and pays off only beyond
+            # weeks of data: the disk here has just a few GB free.
+            - --downsampling.disable
+            - --retention.resolution-raw=14d
+            - --delete-delay=1h
+          ports:
+            - name: http
+              containerPort: 10902
+          readinessProbe:
+            httpGet:
+              path: /-/ready
+              port: http
+          livenessProbe:
+            httpGet:
+              path: /-/healthy
+              port: http
+            initialDelaySeconds: 30
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              memory: 512Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - name: data
+              mountPath: /data
+            - name: objstore
+              mountPath: /etc/thanos
+              readOnly: true
+      volumes:
+        - name: data
+          emptyDir:
+            sizeLimit: 1Gi
+        - name: objstore
+          secret:
+            secretName: thanos-objstore
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: thanos-compact
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/name: thanos-compact
+    app.kubernetes.io/part-of: thanos
+spec:
+  selector:
+    app.kubernetes.io/name: thanos-compact
+  ports:
+    - name: http
+      port: 10902
+      targetPort: http

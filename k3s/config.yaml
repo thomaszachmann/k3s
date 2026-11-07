@@ -1,0 +1,27 @@
+# Zielpfad auf dem Node: /etc/rancher/k3s/config.yaml
+# Muss vor der k3s-Installation dort liegen, sonst startet k3s wieder mit Flannel.
+
+# Netzwerk: Cilium übernimmt CNI, Network Policies und Services
+flannel-backend: "none"
+disable-network-policy: true
+disable-kube-proxy: true
+
+# k3s-Standardwerte, hier bewusst sichtbar
+# cluster-cidr muss zur Pod-CIDR in cilium/values.yaml passen
+cluster-cidr: "10.42.0.0/16"
+service-cidr: "10.43.0.0/16"
+
+# Datastore: etcd statt SQLite
+cluster-init: true
+
+# Secrets im Datastore verschlüsseln
+secrets-encryption: true
+
+# Stufe 2: erst aktivieren, wenn beide Dateien auf dem Node liegen
+kube-apiserver-arg:
+  - "admission-control-config-file=/var/lib/rancher/k3s/server/psa.yaml"
+#   - "audit-policy-file=/var/lib/rancher/k3s/server/audit.yaml"
+#   - "audit-log-path=/var/lib/rancher/k3s/server/logs/audit.log"
+#   - "audit-log-maxage=30"
+#   - "audit-log-maxbackup=10"
+#   - "audit-log-maxsize=100"

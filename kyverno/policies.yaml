@@ -1,0 +1,63 @@
+apiVersion: policies.kyverno.io/v1
+kind: ValidatingPolicy
+metadata:
+  name: disallow-latest-tag
+spec:
+  validationActions: [Audit]
+  matchConstraints:
+    namespaceSelector:
+      matchExpressions:
+        - key: kubernetes.io/metadata.name
+          operator: NotIn
+          values: [kube-system, kyverno]
+    resourceRules:
+      - apiGroups: ['']
+        apiVersions: [v1]
+        operations: [CREATE, UPDATE]
+        resources: [pods]
+  validations:
+    - message: Images brauchen einen festen Tag, nicht latest.
+      expression: >-
+        object.spec.containers.all(c,
+        c.image.contains(':') && !c.image.endsWith(':latest'))
+---
+apiVersion: policies.kyverno.io/v1
+kind: ValidatingPolicy
+metadata:
+  name: require-memory-limit
+spec:
+  validationActions: [Audit]
+  matchConstraints:
+    namespaceSelector:
+      matchLabels:
+        security.k3s2/tier: app
+    resourceRules:
+      - apiGroups: ['']
+        apiVersions: [v1]
+        operations: [CREATE, UPDATE]
+        resources: [pods]
+  validations:
+    - message: Jeder Container braucht ein Memory-Limit.
+      expression: >-
+        object.spec.containers.all(c,
+        c.?resources.?limits.?memory.orValue('') != '')
+---
+apiVersion: policies.kyverno.io/v1
+kind: ValidatingPolicy
+metadata:
+  name: require-team-label
+spec:
+  validationActions: [Audit]
+  matchConstraints:
+    namespaceSelector:
+      matchLabels:
+        security.k3s2/tier: app
+    resourceRules:
+      - apiGroups: ['']
+        apiVersions: [v1]
+        operations: [CREATE, UPDATE]
+        resources: [pods]
+  validations:
+    - message: Das Label team fehlt.
+      expression: >-
+        object.metadata.?labels.team.orValue('') != ''

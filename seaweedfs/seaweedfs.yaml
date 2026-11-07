@@ -1,0 +1,94 @@
+# S3-compatible object storage for the monitoring stack.
+# Replaces the former emptyDir deployment: data must survive pod recreation,
+# otherwise "long-term storage" would be lost on every rollout.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: s3-data
+  namespace: monitoring
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: local-path
+  resources:
+    requests:
+      # local-path does NOT enforce this size. The real limit is set by the
+      # weed flags below: 16 volumes x 256 MB = about 4 GB.
+      storage: 4Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: s3
+  namespace: monitoring
+  labels:
+    app: s3
+spec:
+  replicas: 1
+  # RWO volume and a single-writer data directory: never run two pods at once.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: s3
+  template:
+    metadata:
+      labels:
+        app: s3
+    spec:
+      # Kubernetes would inject S3_PORT=tcp://<ip>:8333 for the service "s3".
+      # SeaweedFS reads flags from the environment and crashes parsing that as
+      # -s3.port, so these legacy service variables must stay off.
+      enableServiceLinks: false
+      containers:
+        - name: s3
+          image: chrislusf/seaweedfs:4.52
+          args:
+            - server
+            - -dir=/data
+            - -s3
+            - -s3.config=/etc/seaweedfs/s3.json
+            - -master.volumeSizeLimitMB=256
+            - -volume.max=16
+            - -volume.minFreeSpace=2GiB
+          ports:
+            - name: s3
+              containerPort: 8333
+          readinessProbe:
+            tcpSocket:
+              port: s3
+            periodSeconds: 5
+            failureThreshold: 12
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              memory: 1Gi
+          volumeMounts:
+            - name: data
+              mountPath: /data
+            - name: config
+              mountPath: /etc/seaweedfs
+              readOnly: true
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: s3-data
+        - name: config
+          secret:
+            secretName: s3-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: s3
+  namespace: monitoring
+  labels:
+    app: s3
+spec:
+  selector:
+    app: s3
+  ports:
+    - name: s3
+      port: 8333
+      targetPort: s3

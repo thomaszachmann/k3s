@@ -1,0 +1,19 @@
+# The Grafana sidecar picks up every ConfigMap labeled grafana_dashboard=1.
+# Apply with: kubectl apply -k grafana/ --server-side
+# (server-side, because the dashboards exceed the client-side annotation limit)
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: monitoring
+generatorOptions:
+  disableNameSuffixHash: true
+  labels:
+    grafana_dashboard: "1"
+configMapGenerator:
+  - name: thanos-dashboards
+    files:
+      - dashboards/thanos-overview.json
+      - dashboards/thanos-query.json
+      - dashboards/thanos-store.json
+      - dashboards/thanos-compact.json
+      - dashboards/thanos-sidecar.json
+      - dashboards/thanos-proof.json

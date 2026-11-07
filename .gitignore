@@ -1,0 +1,14 @@
+# Private Schlüssel, Zertifikatsanfragen und Kubeconfigs mit Zugangsdaten
+*.key
+*.csr
+*.kubeconfig
+kubeconfig*
+*.pem
+
+# Lokale Claude-Code-Einstellungen
+.claude/settings.local.json
+**/.claude/settings.local.json
+
+# macOS und Dropbox
+.DS_Store
+*conflicted copy*

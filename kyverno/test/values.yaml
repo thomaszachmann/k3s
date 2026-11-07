@@ -1,0 +1,7 @@
+apiVersion: cli.kyverno.io/v1alpha1
+kind: Values
+namespaceSelector:
+  - name: demo
+    labels:
+      kubernetes.io/metadata.name: demo
+      security.k3s2/tier: app
