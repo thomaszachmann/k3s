@@ -1,0 +1,29 @@
+# Remote Write der Cluster an Thanos Receive (Kapitel 5).
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: receive
+  namespace: monitoring
+  annotations:
+    # Nur HTTPS, und nur mit Basic Auth.
+    traefik.ingress.kubernetes.io/router.entrypoints: websecure
+    traefik.ingress.kubernetes.io/router.tls: "true"
+    traefik.ingress.kubernetes.io/router.middlewares: monitoring-obs-basic-auth@kubernetescrd
+spec:
+  ingressClassName: traefik
+  tls:
+    - hosts:
+        - receive.obs.internal
+      secretName: obs-tls
+  rules:
+    - host: receive.obs.internal
+      http:
+        paths:
+          # Nur der Schreibpfad ist von außen erreichbar, Lesen bleibt intern.
+          - path: /api/v1/receive
+            pathType: Prefix
+            backend:
+              service:
+                name: thanos-receive
+                port:
+                  number: 19291

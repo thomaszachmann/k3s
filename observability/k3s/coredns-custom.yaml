@@ -1,0 +1,23 @@
+# Namensauflösung für *.obs.internal in jedem Cluster.
+# k3s-CoreDNS lädt alle Schlüssel "*.server" dieser ConfigMap als eigene
+# Server-Blöcke. Gilt auf allen drei Clustern (obs, app1, app2).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: coredns-custom
+  namespace: kube-system
+data:
+  obs.server: |
+    obs.internal:53 {
+        errors
+        cache 30
+        hosts {
+            172.16.0.150 grafana.obs.internal
+            172.16.0.150 receive.obs.internal
+            172.16.0.150 loki.obs.internal
+            172.16.0.150 tempo.obs.internal
+            172.16.0.150 alertmanager.obs.internal
+            172.16.0.150 s3.obs.internal
+            fallthrough
+        }
+    }

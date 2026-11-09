@@ -1,0 +1,64 @@
+# Demo-App HotROD (Kapitel 9): vier kleine Dienste in einem Pod, die
+# per OpenTelemetry Traces erzeugen. Sie schickt OTLP/HTTP an das lokale Alloy.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: demo
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: hotrod
+  namespace: demo
+  labels:
+    app.kubernetes.io/name: hotrod
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: hotrod
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: hotrod
+    spec:
+      containers:
+        - name: hotrod
+          image: jaegertracing/example-hotrod:2.22.0
+          args: ["all"]
+          env:
+            # Alloy im selben Cluster, Port 4318 = OTLP über HTTP.
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: http://alloy.monitoring.svc.cluster.local:4318
+          ports:
+            - name: http
+              containerPort: 8080
+          readinessProbe:
+            httpGet:
+              path: /
+              port: http
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            seccompProfile:
+              type: RuntimeDefault
+          resources:
+            requests:
+              cpu: 20m
+              memory: 32Mi
+            limits:
+              memory: 128Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: hotrod
+  namespace: demo
+spec:
+  selector:
+    app.kubernetes.io/name: hotrod
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http

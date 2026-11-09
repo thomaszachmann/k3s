@@ -1,0 +1,12 @@
+{
+  "Rules": [
+    {
+      "ID": "alte-versionen-und-uploads",
+      "Status": "Enabled",
+      "Filter": {"Prefix": ""},
+      "AbortIncompleteMultipartUpload": {"DaysAfterInitiation": 7},
+      "NoncurrentVersionExpiration": {"NoncurrentDays": 30},
+      "Expiration": {"ExpiredObjectDeleteMarker": true}
+    }
+  ]
+}

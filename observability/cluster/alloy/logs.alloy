@@ -1,0 +1,95 @@
+// Logs aus dem Cluster an Loki auf obs (Kapitel 8).
+// Läuft in allen drei Clustern. Alle Komponenten tragen das Präfix logs_.
+// Lies von unten nach oben: logs_loki ist das Ziel, jeder Block leitet
+// mit forward_to weiter.
+
+// 1. Alle Pods auf diesem Node finden. Alloy läuft als DaemonSet,
+//    HOSTNAME ist der Node-Name (gesetzt vom Helm-Chart). So liest bei
+//    mehreren Nodes jeder Alloy-Pod nur die Logs seines eigenen Nodes.
+discovery.kubernetes "logs_pods" {
+  role = "pod"
+  selectors {
+    role  = "pod"
+    field = "spec.nodeName=" + sys.env("HOSTNAME")
+  }
+}
+
+// 2. Wenige, stabile Labels setzen. Alles andere bleibt im Log-Text.
+discovery.relabel "logs_pods" {
+  targets = discovery.kubernetes.logs_pods.targets
+
+  rule {
+    source_labels = ["__meta_kubernetes_namespace"]
+    target_label  = "namespace"
+  }
+  rule {
+    source_labels = ["__meta_kubernetes_pod_name"]
+    target_label  = "pod"
+  }
+  rule {
+    source_labels = ["__meta_kubernetes_pod_container_name"]
+    target_label  = "container"
+  }
+  // app aus dem empfohlenen Label, sonst aus dem klassischen "app".
+  rule {
+    source_labels = ["__meta_kubernetes_pod_label_app_kubernetes_io_name",
+                     "__meta_kubernetes_pod_label_app"]
+    separator     = ";"
+    regex         = ";*([^;]+).*"
+    target_label  = "app"
+  }
+  // Pods, die schon fertig sind (Jobs), liefern keine Logs mehr.
+  rule {
+    source_labels = ["__meta_kubernetes_pod_phase"]
+    regex         = "Succeeded|Failed"
+    action        = "drop"
+  }
+}
+
+// 3. Logs über die Kubernetes-API lesen. Kein hostPath, kein root nötig.
+loki.source.kubernetes "logs_pods" {
+  targets    = discovery.relabel.logs_pods.output
+  forward_to = [loki.process.logs_pods.receiver]
+}
+
+// 4. Die Logstufe als strukturierte Metadaten ablegen, nicht als Label.
+loki.process "logs_pods" {
+  stage.regex {
+    // Findet level=info, "level":"error", lvl=warn usw.
+    expression = `(?i)(?:level|lvl|severity)"?[=:]\s*"?(?P<level>[a-z]+)`
+  }
+  stage.structured_metadata {
+    values = {
+      level = "",
+    }
+  }
+  forward_to = [loki.write.logs_loki.receiver]
+}
+
+// 5. Kubernetes-Events (Scheduling, OOM, BackOff ...) als Logs.
+//    Achtung: Bei mehreren Nodes liefe das in jedem Alloy-Pod und
+//    erzeugte doppelte Events. Im Labor gibt es je Cluster nur einen Node.
+loki.source.kubernetes_events "logs_events" {
+  job_name   = "kubernetes-events"
+  log_format = "logfmt"
+  forward_to = [loki.write.logs_loki.receiver]
+}
+
+// 6. Ziel: Loki auf obs, als Mandant = Clustername.
+loki.write "logs_loki" {
+  endpoint {
+    url       = "https://loki.obs.internal/loki/api/v1/push"
+    tenant_id = sys.env("CLUSTER_NAME")
+
+    basic_auth {
+      username = sys.env("OBS_USER")
+      password = sys.env("OBS_PASSWORD")
+    }
+    tls_config {
+      ca_file = "/etc/obs-ca/ca.crt"
+    }
+  }
+  external_labels = {
+    cluster = sys.env("CLUSTER_NAME"),
+  }
+}

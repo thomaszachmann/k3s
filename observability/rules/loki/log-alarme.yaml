@@ -1,0 +1,37 @@
+# Log-Alarme für den Loki-Ruler (Kapitel 8).
+# Dieselbe Datei wird für jeden Mandanten (obs, app1, app2) geladen,
+# siehe kustomization.yaml. Jede Regel sieht nur die Logs ihres Mandanten.
+groups:
+  - name: logs
+    rules:
+      # Ein Pod schreibt dauerhaft viele Fehlerzeilen.
+      - alert: LogFehlerHaeufig
+        expr: |
+          sum by (cluster, namespace, pod) (
+            rate({namespace=~".+"} |~ "(?i)(error|exception|panic)" [5m])
+          ) > 1
+        for: 10m
+        labels:
+          severity: warning
+          quelle: loki
+        annotations:
+          summary: "Viele Fehlerzeilen in {{ $labels.cluster }}/{{ $labels.namespace }}/{{ $labels.pod }}"
+          description: "Der Pod schreibt seit 10 Minuten mehr als eine Fehlerzeile pro Sekunde (aktuell {{ $value | printf \"%.1f\" }}/s)."
+
+      # Kubernetes meldet Warnungen, die fast immer Handarbeit brauchen.
+      - alert: KubernetesWarnEvent
+        expr: |
+          sum by (cluster, namespace, reason) (
+            count_over_time(
+              {job="kubernetes-events"} | logfmt
+                | type="Warning"
+                | reason=~"BackOff|FailedScheduling|FailedMount|OOMKilling|Evicted" [10m]
+            )
+          ) > 0
+        for: 5m
+        labels:
+          severity: warning
+          quelle: loki
+        annotations:
+          summary: "Warn-Event {{ $labels.reason }} in {{ $labels.cluster }}/{{ $labels.namespace }}"
+          description: "Kubernetes hat in den letzten 10 Minuten {{ $value }} Warn-Events mit Grund {{ $labels.reason }} gemeldet."

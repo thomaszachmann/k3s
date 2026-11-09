@@ -1,0 +1,22 @@
+# Datenquelle Alertmanager (Kapitel 6). Zeigt Alarme und Silences
+# des Alertmanagers in Grafana unter Alerting.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-ds-alertmanager
+  namespace: monitoring
+  labels:
+    grafana_datasource: "1"
+data:
+  alertmanager.yaml: |
+    apiVersion: 1
+    datasources:
+      - name: Alertmanager
+        uid: alertmanager
+        type: alertmanager
+        access: proxy
+        url: http://alertmanager-operated.monitoring.svc:9093
+        editable: false
+        jsonData:
+          implementation: prometheus
+          handleGrafanaManagedAlerts: false

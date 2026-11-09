@@ -1,0 +1,96 @@
+# SLO fuer die Demo-App: 99 % der Server-Anfragen ohne Fehler, gemessen ueber 30 Tage.
+# Fehlerbudget = 1 % = 0.01. Quelle: Span-Metriken von Tempo (Kapitel 9).
+# Ausgewertet vom Thanos Ruler, weil die Metriken ueber Thanos Receive kommen.
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: slo-demo
+  namespace: monitoring
+  labels:
+    auswertung: global
+spec:
+  groups:
+    - name: slo-demo-fehlerquote
+      interval: 1m
+      rules:
+        - record: slo:demo_fehlerquote:rate5m
+          expr: |
+            sum by (cluster) (rate(traces_spanmetrics_calls_total{service="frontend", span_kind="SPAN_KIND_SERVER", status_code="STATUS_CODE_ERROR"}[5m]))
+              /
+            sum by (cluster) (rate(traces_spanmetrics_calls_total{service="frontend", span_kind="SPAN_KIND_SERVER"}[5m]))
+        - record: slo:demo_fehlerquote:rate30m
+          expr: |
+            sum by (cluster) (rate(traces_spanmetrics_calls_total{service="frontend", span_kind="SPAN_KIND_SERVER", status_code="STATUS_CODE_ERROR"}[30m]))
+              /
+            sum by (cluster) (rate(traces_spanmetrics_calls_total{service="frontend", span_kind="SPAN_KIND_SERVER"}[30m]))
+        - record: slo:demo_fehlerquote:rate1h
+          expr: |
+            sum by (cluster) (rate(traces_spanmetrics_calls_total{service="frontend", span_kind="SPAN_KIND_SERVER", status_code="STATUS_CODE_ERROR"}[1h]))
+              /
+            sum by (cluster) (rate(traces_spanmetrics_calls_total{service="frontend", span_kind="SPAN_KIND_SERVER"}[1h]))
+        - record: slo:demo_fehlerquote:rate2h
+          expr: |
+            sum by (cluster) (rate(traces_spanmetrics_calls_total{service="frontend", span_kind="SPAN_KIND_SERVER", status_code="STATUS_CODE_ERROR"}[2h]))
+              /
+            sum by (cluster) (rate(traces_spanmetrics_calls_total{service="frontend", span_kind="SPAN_KIND_SERVER"}[2h]))
+        - record: slo:demo_fehlerquote:rate6h
+          expr: |
+            sum by (cluster) (rate(traces_spanmetrics_calls_total{service="frontend", span_kind="SPAN_KIND_SERVER", status_code="STATUS_CODE_ERROR"}[6h]))
+              /
+            sum by (cluster) (rate(traces_spanmetrics_calls_total{service="frontend", span_kind="SPAN_KIND_SERVER"}[6h]))
+        - record: slo:demo_fehlerquote:rate1d
+          expr: |
+            sum by (cluster) (rate(traces_spanmetrics_calls_total{service="frontend", span_kind="SPAN_KIND_SERVER", status_code="STATUS_CODE_ERROR"}[1d]))
+              /
+            sum by (cluster) (rate(traces_spanmetrics_calls_total{service="frontend", span_kind="SPAN_KIND_SERVER"}[1d]))
+        - record: slo:demo_fehlerquote:rate3d
+          expr: |
+            sum by (cluster) (rate(traces_spanmetrics_calls_total{service="frontend", span_kind="SPAN_KIND_SERVER", status_code="STATUS_CODE_ERROR"}[3d]))
+              /
+            sum by (cluster) (rate(traces_spanmetrics_calls_total{service="frontend", span_kind="SPAN_KIND_SERVER"}[3d]))
+    - name: slo-demo-burn-rate
+      rules:
+        # Schnell: 2 % des Monatsbudgets in 1 Stunde (Faktor 14.4).
+        - alert: DemoFehlerbudgetBrenntSchnell
+          expr: |
+            slo:demo_fehlerquote:rate1h > (14.4 * 0.01)
+              and
+            slo:demo_fehlerquote:rate5m > (14.4 * 0.01)
+          for: 2m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Demo-App in {{ $labels.cluster }} verbraucht ihr Fehlerbudget 14-mal zu schnell"
+        # Mittel: 5 % des Monatsbudgets in 6 Stunden (Faktor 6).
+        - alert: DemoFehlerbudgetBrenntSchnell
+          expr: |
+            slo:demo_fehlerquote:rate6h > (6 * 0.01)
+              and
+            slo:demo_fehlerquote:rate30m > (6 * 0.01)
+          for: 15m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Demo-App in {{ $labels.cluster }} verbraucht ihr Fehlerbudget 6-mal zu schnell"
+        # Langsam: 10 % des Monatsbudgets in 1 Tag (Faktor 3).
+        - alert: DemoFehlerbudgetBrenntLangsam
+          expr: |
+            slo:demo_fehlerquote:rate1d > (3 * 0.01)
+              and
+            slo:demo_fehlerquote:rate2h > (3 * 0.01)
+          for: 1h
+          labels:
+            severity: warning
+          annotations:
+            summary: "Demo-App in {{ $labels.cluster }} verbraucht ihr Fehlerbudget 3-mal zu schnell"
+        # Schleichend: 10 % des Monatsbudgets in 3 Tagen (Faktor 1).
+        - alert: DemoFehlerbudgetBrenntLangsam
+          expr: |
+            slo:demo_fehlerquote:rate3d > (1 * 0.01)
+              and
+            slo:demo_fehlerquote:rate6h > (1 * 0.01)
+          for: 3h
+          labels:
+            severity: warning
+          annotations:
+            summary: "Demo-App in {{ $labels.cluster }} verbraucht ihr Fehlerbudget schneller als geplant"

@@ -1,0 +1,175 @@
+// Metriken eines App-Clusters einsammeln und an Thanos Receive auf obs schicken.
+// Nur für app1 und app2, auf obs übernimmt Prometheus diese Aufgabe (Kapitel 5).
+// Alle Komponenten tragen das Präfix metrics_, damit sie sich nicht mit
+// logs.alloy (Kapitel 8) und traces.alloy (Kapitel 9) überschneiden.
+//
+// Alloy läuft als DaemonSet. Jeder Pod sammelt nur Ziele auf seinem eigenen
+// Node ein (HOSTNAME = Node-Name, gesetzt vom Helm-Chart). So entstehen auch
+// mit mehreren Nodes keine doppelten Serien.
+
+// ---------------------------------------------------------------------------
+// Kubelet und cAdvisor: Node-, Pod- und Container-Metriken
+// ---------------------------------------------------------------------------
+
+discovery.kubernetes "metrics_nodes" {
+  role = "node"
+  selectors {
+    role  = "node"
+    field = "metadata.name=" + sys.env("HOSTNAME")
+  }
+}
+
+discovery.relabel "metrics_kubelet" {
+  targets = discovery.kubernetes.metrics_nodes.targets
+
+  rule {
+    source_labels = ["__meta_kubernetes_node_name"]
+    target_label  = "node"
+  }
+  // Die Dashboards von kube-prometheus-stack unterscheiden Kubelet und
+  // cAdvisor über das Label metrics_path.
+  rule {
+    target_label = "metrics_path"
+    replacement  = "/metrics"
+  }
+}
+
+discovery.relabel "metrics_cadvisor" {
+  targets = discovery.kubernetes.metrics_nodes.targets
+
+  rule {
+    source_labels = ["__meta_kubernetes_node_name"]
+    target_label  = "node"
+  }
+  rule {
+    target_label = "metrics_path"
+    replacement  = "/metrics/cadvisor"
+  }
+}
+
+prometheus.scrape "metrics_kubelet" {
+  targets           = discovery.relabel.metrics_kubelet.output
+  job_name          = "kubelet"
+  metrics_path      = "/metrics"
+  scheme            = "https"
+  scrape_interval   = "30s"
+  bearer_token_file = "/var/run/secrets/kubernetes.io/serviceaccount/token"
+  tls_config {
+    ca_file = "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
+    // Wie kube-prometheus-stack: das Kubelet-Zertifikat nicht prüfen.
+    insecure_skip_verify = true
+  }
+  forward_to = [prometheus.remote_write.metrics_obs.receiver]
+}
+
+prometheus.scrape "metrics_cadvisor" {
+  targets           = discovery.relabel.metrics_cadvisor.output
+  job_name          = "kubelet"
+  metrics_path      = "/metrics/cadvisor"
+  scheme            = "https"
+  scrape_interval   = "30s"
+  honor_labels      = true
+  bearer_token_file = "/var/run/secrets/kubernetes.io/serviceaccount/token"
+  tls_config {
+    ca_file              = "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
+    insecure_skip_verify = true
+  }
+  forward_to = [prometheus.remote_write.metrics_obs.receiver]
+}
+
+// ---------------------------------------------------------------------------
+// node-exporter und kube-state-metrics: Pods im Namespace monitoring
+// ---------------------------------------------------------------------------
+
+discovery.kubernetes "metrics_pods" {
+  role = "pod"
+  namespaces {
+    names = ["monitoring"]
+  }
+  selectors {
+    role  = "pod"
+    field = "spec.nodeName=" + sys.env("HOSTNAME")
+  }
+}
+
+discovery.relabel "metrics_node_exporter" {
+  targets = discovery.kubernetes.metrics_pods.targets
+
+  rule {
+    source_labels = ["__meta_kubernetes_pod_label_app_kubernetes_io_name"]
+    regex         = "prometheus-node-exporter"
+    action        = "keep"
+  }
+  rule {
+    source_labels = ["__meta_kubernetes_pod_container_port_name"]
+    regex         = "metrics"
+    action        = "keep"
+  }
+  rule {
+    source_labels = ["__meta_kubernetes_pod_node_name"]
+    target_label  = "node"
+  }
+}
+
+discovery.relabel "metrics_kube_state_metrics" {
+  targets = discovery.kubernetes.metrics_pods.targets
+
+  rule {
+    source_labels = ["__meta_kubernetes_pod_label_app_kubernetes_io_name"]
+    regex         = "kube-state-metrics"
+    action        = "keep"
+  }
+  // Port "http" liefert die Objekt-Metriken, Port "metrics" nur die
+  // Selbstauskunft von kube-state-metrics.
+  rule {
+    source_labels = ["__meta_kubernetes_pod_container_port_name"]
+    regex         = "http"
+    action        = "keep"
+  }
+}
+
+prometheus.scrape "metrics_node_exporter" {
+  targets         = discovery.relabel.metrics_node_exporter.output
+  job_name        = "node-exporter"
+  scrape_interval = "30s"
+  forward_to      = [prometheus.remote_write.metrics_obs.receiver]
+}
+
+prometheus.scrape "metrics_kube_state_metrics" {
+  targets         = discovery.relabel.metrics_kube_state_metrics.output
+  job_name        = "kube-state-metrics"
+  scrape_interval = "30s"
+  // Die Labels namespace, pod usw. beschreiben das Kubernetes-Objekt,
+  // nicht den kube-state-metrics-Pod. Sie dürfen nicht überschrieben werden.
+  honor_labels = true
+  forward_to   = [prometheus.remote_write.metrics_obs.receiver]
+}
+
+// ---------------------------------------------------------------------------
+// Versand an Thanos Receive auf obs
+// ---------------------------------------------------------------------------
+
+prometheus.remote_write "metrics_obs" {
+  // Jede Serie trägt den Clusternamen.
+  external_labels = {
+    cluster = sys.env("CLUSTER_NAME"),
+  }
+
+  endpoint {
+    url = "https://receive.obs.internal/api/v1/receive"
+
+    // Mandant in Thanos Receive, landet dort als Label tenant_id.
+    headers = {
+      "THANOS-TENANT" = sys.env("CLUSTER_NAME"),
+    }
+
+    basic_auth {
+      username = sys.env("OBS_USER")
+      password = sys.env("OBS_PASSWORD")
+    }
+
+    tls_config {
+      ca_file = "/etc/obs-ca/ca.crt"
+    }
+  }
+}

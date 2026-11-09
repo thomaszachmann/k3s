@@ -1,0 +1,27 @@
+# k3s-Konfiguration für die VM k3s-app2 (172.16.0.152), Kontext "app2".
+# Zielpfad auf der VM: /etc/rancher/k3s/config.yaml
+# Muss vor der Installation dort liegen, sonst gelten die Standardwerte.
+# Standard-k3s: Flannel, Traefik, ServiceLB und local-path bleiben an.
+
+node-name: k3s-app2
+node-ip: 172.16.0.152
+# Das API-Server-Zertifikat gilt auch für die IP, damit kubectl vom Mac aus prüfen kann.
+tls-san:
+  - 172.16.0.152
+
+# Eingebettetes etcd statt SQLite: Voraussetzung für Snapshots (Kapitel 12).
+cluster-init: true
+
+# Secrets liegen verschlüsselt im Datastore.
+secrets-encryption: true
+
+# Kubeconfig nur für root lesbar.
+write-kubeconfig-mode: "0600"
+
+# Standardnetze, hier bewusst sichtbar. Jeder Cluster ist eigenständig,
+# deshalb dürfen sich die Netze zwischen den Clustern wiederholen.
+cluster-cidr: "10.42.0.0/16"
+service-cidr: "10.43.0.0/16"
+
+# etcd-Metriken auf der Node-IP (Port 2381) anbieten, für Meta-Monitoring.
+etcd-expose-metrics: true

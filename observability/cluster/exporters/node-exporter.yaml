@@ -1,0 +1,20 @@
+# node-exporter für app1 und app2.
+# Chart prometheus-community/prometheus-node-exporter 5.0.0 (App v1.12.1),
+# Release node-exporter, Namespace monitoring.
+# Alloy findet die Pods über das Label app.kubernetes.io/name=prometheus-node-exporter
+# und den Port "metrics" und setzt job="node-exporter".
+
+prometheusScrape: false
+
+# Dieselben Filter wie kube-prometheus-stack: keine Pseudo-Dateisysteme und
+# keine Container-Mounts, sonst entstehen viele nutzlose Serien.
+extraArgs:
+  - --collector.filesystem.mount-points-exclude=^/(dev|proc|sys|run/containerd/.+|var/lib/docker/.+|var/lib/kubelet/.+)($|/)
+  - --collector.filesystem.fs-types-exclude=^(autofs|binfmt_misc|bpf|cgroup2?|configfs|debugfs|devpts|devtmpfs|fusectl|hugetlbfs|iso9660|mqueue|nsfs|overlay|proc|procfs|pstore|rpc_pipefs|securityfs|selinuxfs|squashfs|sysfs|tracefs|erofs)$
+
+resources:
+  requests:
+    cpu: 10m
+    memory: 32Mi
+  limits:
+    memory: 128Mi

@@ -1,0 +1,12 @@
+# Variante AWS: Velero schreibt in den Bucket <praefix>-obs-backup aus Kapitel 11.
+# Wird NACH velero-values.yaml angegeben. Der helm-Befehl ersetzt PRAEFIX per sed.
+# Listen ersetzt Helm komplett, deshalb steht der Speicherort hier vollstaendig.
+configuration:
+  backupStorageLocation:
+    - name: default
+      provider: aws
+      bucket: PRAEFIX-obs-backup
+      prefix: velero/app1
+      default: true
+      config:
+        region: eu-central-1

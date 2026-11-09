@@ -1,0 +1,13 @@
+# Zusatzwerte fuer Tempo: schaltet von SeaweedFS auf AWS S3 um.
+# Wird NACH observability/central/tempo/values.yaml angegeben.
+# Die Schluessel kommen weiter aus dem Secret tempo-s3 (Kap. 9).
+tempo:
+  storage:
+    trace:
+      backend: s3
+      s3:
+        bucket: PRAEFIX-obs-tempo
+        endpoint: s3.eu-central-1.amazonaws.com
+        region: eu-central-1
+        insecure: false
+        forcepathstyle: false

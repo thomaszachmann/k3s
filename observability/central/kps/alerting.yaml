@@ -1,0 +1,157 @@
+# Alarme, die ankommen (Kapitel 7).
+# Ergänzt values.yaml (Kapitel 4) und grafana.yaml (Kapitel 6):
+#   helm upgrade kps prometheus-community/kube-prometheus-stack --version 92.18.0 \
+#     -n monitoring -f values.yaml -f grafana.yaml -f alerting.yaml
+alertmanager:
+  ingress:
+    enabled: true
+    ingressClassName: traefik
+    annotations:
+      traefik.ingress.kubernetes.io/router.entrypoints: websecure
+      traefik.ingress.kubernetes.io/router.tls: "true"
+      # Alertmanager hat keine eigene Anmeldung, also Basic Auth aus Kapitel 5.
+      traefik.ingress.kubernetes.io/router.middlewares: monitoring-obs-basic-auth@kubernetescrd
+    hosts:
+      - alertmanager.obs.internal
+    paths:
+      - /
+    pathType: Prefix
+    tls:
+      - secretName: obs-tls
+        hosts:
+          - alertmanager.obs.internal
+
+  alertmanagerSpec:
+    # Links in den Mails zeigen auf diese Adresse.
+    externalUrl: https://alertmanager.obs.internal
+    # Wird unter /etc/alertmanager/secrets/alertmanager-deadmansswitch/ eingehängt.
+    secrets:
+      - alertmanager-deadmansswitch
+
+  config:
+    global:
+      resolve_timeout: 5m
+      smtp_smarthost: mailpit.monitoring.svc:1025
+      smtp_from: alertmanager@obs.internal
+      smtp_require_tls: false
+
+    route:
+      receiver: plattform
+      # cluster zuerst: Alarme aus app1 und app2 landen nie in derselben Mail.
+      group_by: [cluster, alertname]
+      group_wait: 30s
+      group_interval: 5m
+      repeat_interval: 4h
+      routes:
+        # Herzschlag an den Dead Man's Switch, so oft wie möglich.
+        - receiver: deadmansswitch
+          matchers:
+            - alertname = "Watchdog"
+          group_wait: 0s
+          group_interval: 1m
+          repeat_interval: 1m
+        # Hilfsalarm der Standardregeln, nie zustellen.
+        - receiver: "null"
+          matchers:
+            - alertname = "InfoInhibitor"
+        # Info-Alarme nur in der UI, nicht per Mail.
+        - receiver: "null"
+          matchers:
+            - severity = "info"
+        # Die zentrale Plattform.
+        - receiver: plattform
+          matchers:
+            - cluster = "obs"
+          routes:
+            - receiver: plattform-kritisch
+              matchers:
+                - severity = "critical"
+              group_wait: 10s
+              repeat_interval: 1h
+        # Die App-Cluster.
+        - receiver: apps
+          matchers:
+            - cluster =~ "app1|app2"
+          routes:
+            - receiver: apps-kritisch
+              matchers:
+                - severity = "critical"
+              group_wait: 10s
+              repeat_interval: 1h
+
+    inhibit_rules:
+      # Ist ein Cluster verstummt, sind alle anderen Alarme dieses Clusters Folgen davon.
+      - source_matchers:
+          - alertname = "ClusterSchweigt"
+        target_matchers:
+          - alertname != "ClusterSchweigt"
+        equal: [cluster]
+      # Die Standardregeln des Charts, ergänzt um cluster.
+      - source_matchers:
+          - severity = "critical"
+        target_matchers:
+          - severity =~ "warning|info"
+        equal: [cluster, namespace, alertname]
+      - source_matchers:
+          - severity = "warning"
+        target_matchers:
+          - severity = "info"
+        equal: [cluster, namespace, alertname]
+      - source_matchers:
+          - alertname = "InfoInhibitor"
+        target_matchers:
+          - severity = "info"
+        equal: [cluster, namespace]
+      - target_matchers:
+          - alertname = "InfoInhibitor"
+
+    receivers:
+      - name: "null"
+      - name: deadmansswitch
+        webhook_configs:
+          # Die URL steht nur im Secret, nie in dieser Datei.
+          - url_file: /etc/alertmanager/secrets/alertmanager-deadmansswitch/url
+            send_resolved: false
+      - name: plattform
+        email_configs:
+          - to: plattform@obs.internal
+            send_resolved: true
+      - name: plattform-kritisch
+        email_configs:
+          - to: plattform@obs.internal, bereitschaft@obs.internal
+            send_resolved: true
+      - name: apps
+        email_configs:
+          - to: apps@obs.internal
+            send_resolved: true
+      - name: apps-kritisch
+        email_configs:
+          - to: apps@obs.internal, bereitschaft@obs.internal
+            send_resolved: true
+
+    templates:
+      - /etc/alertmanager/config/*.tmpl
+
+thanosRuler:
+  thanosRulerSpec:
+    # Nur Regeln mit auswertung: global, aus allen Namespaces (wie in values.yaml).
+    ruleSelectorNilUsesHelmValues: false
+    ruleSelector:
+      matchLabels:
+        auswertung: global
+    ruleNamespaceSelector: {}
+    # queryEndpoints (thanos-query), evaluationInterval und Ressourcen
+    # stehen in values.yaml (Kapitel 4).
+    # Lädt die eigenen Blöcke (z. B. die Serie ALERTS) in den Bucket thanos,
+    # damit thanos-store auch ältere Alarmverläufe findet.
+    objectStorageConfig:
+      existingSecret:
+        name: thanos-objstore
+        key: objstore.yml
+    alertmanagersConfig:
+      secret:
+        alertmanagers:
+          - api_version: v2
+            scheme: http
+            static_configs:
+              - alertmanager-operated.monitoring.svc:9093

@@ -1,0 +1,70 @@
+# Grafana Alloy, Chart grafana/alloy 1.15.0, Release alloy, Namespace monitoring.
+# Gilt unverändert für alle drei Cluster. Was ein Cluster tut, bestimmen allein
+# die .alloy-Dateien in der ConfigMap alloy-config:
+#   app1, app2: metrics.alloy (Kapitel 5), logs.alloy (8), traces.alloy (9)
+#   obs:        logs.alloy (8), traces.alloy (9)
+
+alloy:
+  # Die ConfigMap legst du selbst mit kubectl an, nicht Helm.
+  configMap:
+    create: false
+    name: alloy-config
+    # Das Chart startet "alloy run /etc/alloy/<key>". Mit "." wird daraus
+    # /etc/alloy/., also das Verzeichnis. Alloy lädt dann alle *.alloy-Dateien
+    # darin als eine gemeinsame Konfiguration.
+    key: "."
+
+  extraEnv:
+    # Der Benutzername im Secret ist zugleich der Clustername (obs, app1, app2).
+    - name: CLUSTER_NAME
+      valueFrom:
+        secretKeyRef:
+          name: obs-remote-auth
+          key: username
+    - name: OBS_USER
+      valueFrom:
+        secretKeyRef:
+          name: obs-remote-auth
+          key: username
+    - name: OBS_PASSWORD
+      valueFrom:
+        secretKeyRef:
+          name: obs-remote-auth
+          key: password
+
+  mounts:
+    # Pod-Logs unter /var/log, gebraucht ab Kapitel 8.
+    varlog: true
+    extra:
+      # CA der Zentrale, um das Zertifikat von *.obs.internal zu prüfen.
+      - name: obs-ca
+        mountPath: /etc/obs-ca
+        readOnly: true
+
+  # OTLP-Empfang für die Demo-App, gebraucht ab Kapitel 9. Ohne traces.alloy
+  # lauscht dort niemand, die Ports schaden aber nicht.
+  extraPorts:
+    - name: otlp-grpc
+      port: 4317
+      targetPort: 4317
+      protocol: TCP
+    - name: otlp-http
+      port: 4318
+      targetPort: 4318
+      protocol: TCP
+
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      memory: 512Mi
+
+controller:
+  # Ein Alloy-Pod pro Node, nötig für die Pod-Logs in Kapitel 8.
+  type: daemonset
+  volumes:
+    extra:
+      - name: obs-ca
+        configMap:
+          name: obs-ca

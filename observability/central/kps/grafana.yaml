@@ -1,0 +1,81 @@
+# Grafana als Code (Kapitel 6).
+# Ergänzt values.yaml aus Kapitel 4:
+#   helm upgrade kps prometheus-community/kube-prometheus-stack --version 92.18.0 \
+#     -n monitoring -f values.yaml -f grafana.yaml -f alerting.yaml
+# Quelle der Wahrheit ist dieses Repo. Was du in der Oberfläche änderst,
+# ist nach dem nächsten Neustart des Pods wieder weg.
+grafana:
+  # Benutzer und Passwort stehen nur im Secret grafana-admin (openssl rand).
+  admin:
+    existingSecret: grafana-admin
+    userKey: admin-user
+    passwordKey: admin-password
+
+  # Kein PVC: Datenquellen und Dashboards kommen beim Start aus ConfigMaps.
+  persistence:
+    enabled: false
+
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      memory: 512Mi
+
+  ingress:
+    enabled: true
+    ingressClassName: traefik
+    annotations:
+      traefik.ingress.kubernetes.io/router.entrypoints: websecure
+      traefik.ingress.kubernetes.io/router.tls: "true"
+    hosts:
+      - grafana.obs.internal
+    path: /
+    tls:
+      - secretName: obs-tls
+        hosts:
+          - grafana.obs.internal
+
+  grafana.ini:
+    server:
+      root_url: https://grafana.obs.internal
+    users:
+      allow_sign_up: false
+    security:
+      cookie_secure: true
+    analytics:
+      reporting_enabled: false
+      check_for_updates: false
+    dashboards:
+      # Neue Dashboards starten mit 30 Sekunden statt 5.
+      min_refresh_interval: 30s
+
+  sidecar:
+    dashboards:
+      enabled: true
+      label: grafana_dashboard
+      labelValue: "1"
+      searchNamespace: ALL
+      # Ordner aus der Annotation grafana_folder an der ConfigMap.
+      folderAnnotation: grafana_folder
+      # Die mitgelieferten Dashboards von kube-prometheus-stack landen im Ordner "Kubernetes".
+      annotations:
+        grafana_folder: Kubernetes
+      # Zeigt in den mitgelieferten Dashboards die Auswahl "cluster" an.
+      multicluster:
+        global:
+          enabled: true
+      provider:
+        foldersFromFilesStructure: true
+        # Änderungen in der UI lassen sich nicht speichern, nur als JSON exportieren.
+        allowUiUpdates: false
+    datasources:
+      enabled: true
+      label: grafana_datasource
+      labelValue: "1"
+      # Die lokale Prometheus-Datenquelle bleibt zur Fehlersuche, Standard ist Thanos.
+      defaultDatasourceEnabled: true
+      isDefaultDatasource: false
+      # Die Alertmanager-Datenquelle kommt aus observability/grafana/datasources/.
+      alertmanager:
+        enabled: false

@@ -1,0 +1,53 @@
+# Globale Regeln für die Nodes aller Cluster (Kapitel 7).
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: global-knoten
+  namespace: monitoring
+  labels:
+    auswertung: global
+spec:
+  groups:
+    - name: knoten
+      rules:
+        - alert: NodeSpeicherKnapp
+          expr: |
+            1 - (
+              node_memory_MemAvailable_bytes{job="node-exporter"}
+              /
+              node_memory_MemTotal_bytes{job="node-exporter"}
+            ) > 0.90
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Node {{ $labels.instance }} in {{ $labels.cluster }}: Arbeitsspeicher über 90 %"
+            description: "Belegt sind {{ $value | humanizePercentage }} des Arbeitsspeichers."
+            runbook_url: https://github.com/thomaszachmann/k3s/blob/main/observability/rules/runbooks.md#nodespeicherknapp
+        - alert: NodeSpeicherKritisch
+          expr: |
+            1 - (
+              node_memory_MemAvailable_bytes{job="node-exporter"}
+              /
+              node_memory_MemTotal_bytes{job="node-exporter"}
+            ) > 0.97
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Node {{ $labels.instance }} in {{ $labels.cluster }}: Arbeitsspeicher fast voll"
+            description: "Belegt sind {{ $value | humanizePercentage }}. Der OOM-Killer beendet bald Pods."
+            runbook_url: https://github.com/thomaszachmann/k3s/blob/main/observability/rules/runbooks.md#nodespeicherknapp
+        - alert: NodeDiskKnapp
+          expr: |
+            node_filesystem_avail_bytes{job="node-exporter", mountpoint="/", fstype!=""}
+            /
+            node_filesystem_size_bytes{job="node-exporter", mountpoint="/", fstype!=""}
+            < 0.15
+          for: 15m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Node {{ $labels.instance }} in {{ $labels.cluster }}: weniger als 15 % frei auf /"
+            description: "Frei sind noch {{ $value | humanizePercentage }}."
+            runbook_url: https://github.com/thomaszachmann/k3s/blob/main/observability/rules/runbooks.md#nodediskknapp

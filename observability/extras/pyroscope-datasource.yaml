@@ -1,0 +1,18 @@
+# Optional: Datenquelle Pyroscope fuer Grafana (Sidecar, Kapitel 6).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-ds-pyroscope
+  namespace: monitoring
+  labels:
+    grafana_datasource: "1"
+data:
+  pyroscope.yaml: |
+    apiVersion: 1
+    datasources:
+      - name: Pyroscope
+        uid: pyroscope
+        type: grafana-pyroscope-datasource
+        access: proxy
+        url: http://pyroscope.monitoring.svc:4040
+        editable: false

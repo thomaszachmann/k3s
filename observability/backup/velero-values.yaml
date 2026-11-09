@@ -1,0 +1,64 @@
+# Velero 1.18.2 (Chart vmware-tanzu/velero 12.2.4) im Cluster app1, Namespace velero.
+# Ziel: SeaweedFS-Bucket backup auf obs, ueber https://s3.obs.internal,
+# Unterordner velero/app1. Fuer AWS kommt velero-aws.yaml dazu.
+
+# Das AWS-Plugin muss zur Velero-Version passen: Velero 1.18 -> Plugin 1.14.
+initContainers:
+  - name: velero-plugin-for-aws
+    image: velero/velero-plugin-for-aws:v1.14.4
+    imagePullPolicy: IfNotPresent
+    volumeMounts:
+      - mountPath: /target
+        name: plugins
+
+# Zugangsdaten aus einem vorher angelegten Secret (Schluessel cloud).
+credentials:
+  useSecret: true
+  existingSecret: velero-s3
+
+configuration:
+  backupStorageLocation:
+    - name: default
+      provider: aws
+      bucket: backup
+      prefix: velero/app1
+      default: true
+      # Die eigene CA aus Kapitel 2, als Secret im Namespace velero.
+      caCertRef:
+        name: obs-ca
+        key: ca.crt
+      config:
+        region: us-east-1
+        s3ForcePathStyle: "true"
+        s3Url: https://s3.obs.internal
+  # Sicherungen ohne eigene Angabe verfallen nach sieben Tagen.
+  defaultBackupTTL: 168h0m0s
+
+# local-path kennt keine Volume-Snapshots. Deshalb aus.
+snapshotsEnabled: false
+# Kein Node-Agent: Die Demo-App hat keine Volumes mit Daten.
+deployNodeAgent: false
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 128Mi
+  limits:
+    memory: 512Mi
+
+# Taeglich um 3 Uhr den Namespace demo sichern.
+schedules:
+  demo-taeglich:
+    disabled: false
+    schedule: "0 3 * * *"
+    useOwnerReferencesInBackup: false
+    template:
+      ttl: 168h0m0s
+      storageLocation: default
+      includedNamespaces:
+        - demo
+
+# Metriken an Port 8085 (Standard). Die Pod-Annotationen
+# prometheus.io/scrape setzt das Chart selbst.
+metrics:
+  enabled: true

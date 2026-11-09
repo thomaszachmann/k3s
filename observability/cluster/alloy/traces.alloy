@@ -1,0 +1,81 @@
+// Traces aus dem Cluster an Tempo auf obs (Kapitel 9).
+// Läuft in allen drei Clustern. Alle Komponenten tragen das Präfix traces_.
+// Weg einer Span: Empfänger -> Kubernetes-Daten -> cluster-Attribut
+// -> Pakete bilden -> über HTTPS an Tempo.
+
+// 1. OTLP annehmen, über gRPC (4317) und HTTP (4318).
+otelcol.receiver.otlp "traces_in" {
+  grpc {
+    endpoint = "0.0.0.0:4317"
+  }
+  http {
+    endpoint = "0.0.0.0:4318"
+  }
+  output {
+    traces = [otelcol.processor.k8sattributes.traces_k8s.input]
+  }
+}
+
+// 2. Namespace, Pod und Deployment anhand der Absender-IP ergänzen.
+//    Muss direkt hinter dem Empfänger stehen, sonst ist die IP weg.
+otelcol.processor.k8sattributes "traces_k8s" {
+  extract {
+    metadata = [
+      "k8s.namespace.name",
+      "k8s.pod.name",
+      "k8s.deployment.name",
+    ]
+  }
+  pod_association {
+    source {
+      from = "connection"
+    }
+  }
+  output {
+    traces = [otelcol.processor.transform.traces_cluster.input]
+  }
+}
+
+// 3. Jede Span bekommt das Ressourcen-Attribut cluster.
+otelcol.processor.transform "traces_cluster" {
+  error_mode = "ignore"
+
+  trace_statements {
+    context    = "resource"
+    statements = [
+      string.format(`set(attributes["cluster"], "%s")`, sys.env("CLUSTER_NAME")),
+    ]
+  }
+  output {
+    traces = [otelcol.processor.batch.traces_batch.input]
+  }
+}
+
+// 4. In Paketen senden, das spart Verbindungen.
+otelcol.processor.batch "traces_batch" {
+  output {
+    traces = [otelcol.exporter.otlphttp.traces_tempo.input]
+  }
+}
+
+// 5. Anmeldung am Ingress auf obs (Basic Auth, ein Benutzer pro Cluster).
+otelcol.auth.basic "traces_obs" {
+  client_auth {
+    username = sys.env("OBS_USER")
+    password = sys.env("OBS_PASSWORD")
+  }
+}
+
+// 6. Ziel: Tempo auf obs, als Mandant = Clustername.
+otelcol.exporter.otlphttp "traces_tempo" {
+  client {
+    endpoint = "https://tempo.obs.internal"
+    auth     = otelcol.auth.basic.traces_obs.handler
+    headers  = {
+      "X-Scope-OrgID" = sys.env("CLUSTER_NAME"),
+    }
+    tls {
+      ca_file = "/etc/obs-ca/ca.crt"
+    }
+  }
+}

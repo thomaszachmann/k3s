@@ -1,0 +1,60 @@
+# Globale Regeln für die Speicherkette auf obs (Kapitel 7).
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: global-thanos
+  namespace: monitoring
+  labels:
+    auswertung: global
+spec:
+  groups:
+    - name: thanos
+      rules:
+        - alert: ReceiveFehler
+          expr: |
+            (
+              sum by (cluster, job) (rate(http_requests_total{job=~".*thanos-receive.*", handler="receive", code=~"5.."}[5m]))
+              /
+              sum by (cluster, job) (rate(http_requests_total{job=~".*thanos-receive.*", handler="receive"}[5m]))
+            ) > 0.05
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Thanos Receive beantwortet über 5 % der Schreibanfragen mit 5xx"
+            description: "Fehlerquote {{ $value | humanizePercentage }}. Die App-Cluster puffern, verlieren aber nach etwa zwei Stunden Daten."
+            runbook_url: https://github.com/thomaszachmann/k3s/blob/main/observability/rules/runbooks.md#receivefehler
+        - alert: ReceiveLehntAb
+          expr: |
+            (
+              sum by (cluster, job) (rate(http_requests_total{job=~".*thanos-receive.*", handler="receive", code=~"4.."}[5m]))
+              /
+              sum by (cluster, job) (rate(http_requests_total{job=~".*thanos-receive.*", handler="receive"}[5m]))
+            ) > 0.05
+          for: 15m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Thanos Receive lehnt über 5 % der Schreibanfragen ab (4xx)"
+            description: "Typische Ursachen: Daten außerhalb der Reihenfolge (409), Limits (429), falsche Zugangsdaten am Ingress."
+            runbook_url: https://github.com/thomaszachmann/k3s/blob/main/observability/rules/runbooks.md#receivelehntab
+        - alert: ReceiveUploadFehler
+          expr: |
+            sum by (cluster, job) (increase(thanos_shipper_upload_failures_total{job=~".*thanos-receive.*"}[1h])) > 0
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Thanos Receive kann Blöcke nicht ins S3 hochladen"
+            description: "In der letzten Stunde sind Uploads gescheitert. Nach 6 Stunden Retention gehen Daten verloren."
+            runbook_url: https://github.com/thomaszachmann/k3s/blob/main/observability/rules/runbooks.md#receiveuploadfehler
+        - alert: CompactorAngehalten
+          expr: |
+            max by (cluster, job) (thanos_compact_halted{job=~".*thanos-compact.*"}) == 1
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Thanos Compactor hat angehalten"
+            description: "Ohne Compactor wachsen Bucket und Abfragezeiten, Downsampling und Löschen stehen."
+            runbook_url: https://github.com/thomaszachmann/k3s/blob/main/observability/rules/runbooks.md#compactorangehalten

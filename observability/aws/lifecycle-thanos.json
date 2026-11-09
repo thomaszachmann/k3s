@@ -1,0 +1,16 @@
+{
+  "Rules": [
+    {
+      "ID": "abgebrochene-uploads",
+      "Status": "Enabled",
+      "Filter": {"Prefix": ""},
+      "AbortIncompleteMultipartUpload": {"DaysAfterInitiation": 7}
+    },
+    {
+      "ID": "sicherheitsnetz-nach-thanos-retention",
+      "Status": "Enabled",
+      "Filter": {"Prefix": ""},
+      "Expiration": {"Days": 400}
+    }
+  ]
+}

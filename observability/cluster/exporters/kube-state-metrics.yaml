@@ -1,0 +1,15 @@
+# kube-state-metrics für app1 und app2.
+# Chart prometheus-community/kube-state-metrics 9.0.0 (App v2.20.0),
+# Release kube-state-metrics, Namespace monitoring.
+# Alloy findet den Pod über das Label app.kubernetes.io/name=kube-state-metrics
+# und den Port "http" und setzt job="kube-state-metrics".
+
+# Keine prometheus.io/scrape-Annotation: Alloy sucht gezielt, nicht per Annotation.
+prometheusScrape: false
+
+resources:
+  requests:
+    cpu: 10m
+    memory: 64Mi
+  limits:
+    memory: 256Mi

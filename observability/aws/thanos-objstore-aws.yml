@@ -1,0 +1,10 @@
+# Vorlage fuer das Secret thanos-objstore (Schluessel objstore.yml) auf AWS.
+# Der Befehl in Kapitel 11 ersetzt PRAEFIX und haengt die beiden
+# Schluesselzeilen an. Echte Schluessel stehen nie in dieser Datei.
+type: S3
+config:
+  bucket: PRAEFIX-obs-thanos
+  endpoint: s3.eu-central-1.amazonaws.com
+  region: eu-central-1
+  insecure: false
+  bucket_lookup_type: virtual-hosted

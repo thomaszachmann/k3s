@@ -1,0 +1,32 @@
+# Backup-Alarme fuer Velero. Ausgewertet vom Thanos Ruler (alle Cluster).
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: velero
+  namespace: monitoring
+  labels:
+    auswertung: global
+spec:
+  groups:
+    - name: velero
+      rules:
+        - alert: VeleroBackupFehlgeschlagen
+          expr: velero_backup_last_status{schedule!=""} != 1
+          for: 15m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Letzte Sicherung von {{ $labels.schedule }} in {{ $labels.cluster }} war nicht erfolgreich"
+        - alert: VeleroKeineNeueSicherung
+          expr: time() - velero_backup_last_successful_timestamp{schedule!=""} > 25 * 3600
+          for: 1h
+          labels:
+            severity: critical
+          annotations:
+            summary: "Seit mehr als 25 Stunden keine erfolgreiche Sicherung von {{ $labels.schedule }} in {{ $labels.cluster }}"
+        - alert: VeleroSicherungenScheitern
+          expr: increase(velero_backup_failure_total{schedule!=""}[1h]) > 0
+          labels:
+            severity: warning
+          annotations:
+            summary: "Velero meldet gescheiterte Sicherungen von {{ $labels.schedule }} in {{ $labels.cluster }}"

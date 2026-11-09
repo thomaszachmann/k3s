@@ -1,0 +1,14 @@
+# Zusatzwerte fuer Loki: schaltet von SeaweedFS auf AWS S3 um.
+# Wird NACH observability/central/loki/values.yaml angegeben.
+# Die Schluessel kommen weiter aus dem Secret loki-s3 (Kap. 8).
+loki:
+  storage:
+    bucketNames:
+      chunks: PRAEFIX-obs-loki
+      ruler: PRAEFIX-obs-loki
+      admin: PRAEFIX-obs-loki
+    s3:
+      endpoint: s3.eu-central-1.amazonaws.com
+      region: eu-central-1
+      s3ForcePathStyle: false
+      insecure: false

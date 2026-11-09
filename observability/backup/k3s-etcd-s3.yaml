@@ -1,0 +1,17 @@
+# Drop-in fuer k3s: geplante etcd-Snapshots, lokal und in S3.
+# Zielpfad auf jeder VM: /etc/rancher/k3s/config.yaml.d/etcd-s3.yaml
+# Die S3-Zugangsdaten stehen NICHT hier, sondern im Secret k3s-etcd-s3
+# (Namespace kube-system, Typ etcd.k3s.cattle.io/s3-config-secret).
+
+# Alle sechs Stunden ein Snapshot (Standard waere alle zwoelf Stunden).
+etcd-snapshot-schedule-cron: "0 */6 * * *"
+# Lokal auf der VM bleiben die letzten acht Snapshots, also zwei Tage.
+etcd-snapshot-retention: 8
+# Snapshots als ZIP ablegen, spart Platz in S3.
+etcd-snapshot-compress: true
+
+# Kopie nach S3. Ziel und Schluessel liest k3s aus dem Secret.
+# Achtung: Jede weitere etcd-s3-*-Option hier fuehrt dazu, dass k3s das
+# Secret ignoriert.
+etcd-s3: true
+etcd-s3-config-secret: k3s-etcd-s3

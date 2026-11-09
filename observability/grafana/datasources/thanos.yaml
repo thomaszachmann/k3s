@@ -1,0 +1,29 @@
+# Datenquelle Thanos (Kapitel 6). Der Grafana-Sidecar liest jede ConfigMap
+# mit dem Label grafana_datasource: "1" im Namespace monitoring.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-ds-thanos
+  namespace: monitoring
+  labels:
+    grafana_datasource: "1"
+data:
+  thanos.yaml: |
+    apiVersion: 1
+    datasources:
+      - name: Thanos
+        uid: thanos
+        type: prometheus
+        access: proxy
+        url: http://thanos-query.monitoring.svc:10902
+        isDefault: true
+        editable: false
+        jsonData:
+          prometheusType: Thanos
+          httpMethod: POST
+          timeInterval: 30s
+          # Klick auf ein Exemplar öffnet den Trace in Tempo (Kapitel 9).
+          # Tempos Metrics-Generator nennt das Exemplar-Label traceID.
+          exemplarTraceIdDestinations:
+            - name: traceID
+              datasourceUid: tempo

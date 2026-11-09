@@ -1,0 +1,29 @@
+# Log-Push der Cluster an Loki. Der Service loki entsteht erst in Kapitel 8.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: loki
+  namespace: monitoring
+  annotations:
+    # Nur HTTPS, und nur mit Basic Auth.
+    traefik.ingress.kubernetes.io/router.entrypoints: websecure
+    traefik.ingress.kubernetes.io/router.tls: "true"
+    traefik.ingress.kubernetes.io/router.middlewares: monitoring-obs-basic-auth@kubernetescrd
+spec:
+  ingressClassName: traefik
+  tls:
+    - hosts:
+        - loki.obs.internal
+      secretName: obs-tls
+  rules:
+    - host: loki.obs.internal
+      http:
+        paths:
+          # Nur der Schreibpfad ist von außen erreichbar, Lesen bleibt intern.
+          - path: /loki/api/v1/push
+            pathType: Prefix
+            backend:
+              service:
+                name: loki
+                port:
+                  number: 3100

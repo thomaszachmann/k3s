@@ -1,0 +1,30 @@
+# Eigene Dashboards (Kapitel 10). Der Grafana-Sidecar liest jede ConfigMap
+# mit dem Label grafana_dashboard: "1", die Annotation grafana_folder wählt den Ordner.
+# Anwenden (server-side, weil die Dashboards die Grenze für
+# kubectl.kubernetes.io/last-applied-configuration sprengen können):
+#   kubectl --context obs apply -k observability/dashboards/ --server-side
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: monitoring
+generatorOptions:
+  disableNameSuffixHash: true
+  labels:
+    grafana_dashboard: "1"
+configMapGenerator:
+  - name: dashboards-plattform
+    options:
+      annotations:
+        grafana_folder: Plattform
+    files:
+      - plattform/multi-cluster.json
+      - plattform/node.json
+      - plattform/workloads.json
+      - plattform/thanos-speicher.json
+      - plattform/alarme.json
+  - name: dashboards-signale
+    options:
+      annotations:
+        grafana_folder: Signale
+    files:
+      - signale/logs.json
+      - signale/services.json

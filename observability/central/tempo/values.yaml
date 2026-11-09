@@ -1,0 +1,77 @@
+# Tempo auf obs (Kapitel 9). Chart grafana-community/tempo 3.2.1 (Tempo 3.1.1).
+# Ein Prozess, Traces im SeaweedFS-Bucket "tempo".
+# Jeder Cluster schreibt als eigener Mandant (X-Scope-OrgID = Clustername).
+tempo:
+  multitenancyEnabled: true
+  # Nur Statistik an Grafana Labs, im Lab abgeschaltet.
+  reportingEnabled: false
+  retention: 168h
+  storage:
+    trace:
+      backend: s3
+      s3:
+        bucket: tempo
+        endpoint: s3.monitoring.svc.cluster.local:8333
+        region: us-east-1
+        # Tempo setzt die Werte beim Start aus dem Secret tempo-s3 ein.
+        access_key: ${AWS_ACCESS_KEY_ID}
+        secret_key: ${AWS_SECRET_ACCESS_KEY}
+        insecure: true
+        forcepathstyle: true
+      wal:
+        path: /var/tempo/wal
+  # OTLP über gRPC und HTTP. Die Jaeger-Empfänger lässt das Chart
+  # immer an, sie bleiben ungenutzt.
+  receivers:
+    otlp:
+      protocols:
+        grpc:
+          endpoint: "0.0.0.0:4317"
+        http:
+          endpoint: "0.0.0.0:4318"
+  # Abfragen über mehrere Mandanten ("obs|app1|app2"), Standard ist an.
+  queryFrontend:
+    multi_tenant_queries_enabled: true
+  # Metrics-Generator: erzeugt aus Spans Metriken und schreibt sie
+  # als Mandant obs an Thanos Receive.
+  metricsGenerator:
+    enabled: true
+    processor:
+      service_graphs:
+        dimensions:
+          - cluster
+      span_metrics:
+        dimensions:
+          - cluster
+    registry:
+      external_labels:
+        quelle: tempo
+    storage:
+      path: /var/tempo/generator/wal
+      remote_write:
+        - url: http://thanos-receive.monitoring.svc:19291/api/v1/receive
+          send_exemplars: true
+          headers:
+            THANOS-TENANT: obs
+  overrides:
+    defaults:
+      metrics_generator:
+        processors:
+          - service-graphs
+          - span-metrics
+  extraArgs:
+    config.expand-env: "true"
+  extraEnvFrom:
+    - secretRef:
+        name: tempo-s3
+  resources:
+    requests:
+      cpu: 100m
+      memory: 512Mi
+    limits:
+      memory: 1536Mi
+
+persistence:
+  enabled: true
+  size: 10Gi
+  storageClassName: local-path

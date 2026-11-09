@@ -1,0 +1,29 @@
+# OpenSSL-Konfiguration für die Lab-CA und das Wildcard-Zertifikat *.obs.internal.
+# Die Befehle stehen in Kapitel 2. Ins Repo gehören nur diese Datei und die .crt-Dateien,
+# private Schlüssel (*.key) und Anfragen (*.csr) schließt .gitignore aus.
+
+# Der Name (Subject) kommt in den Befehlen per -subj, deshalb bleibt req_dn leer.
+[ req ]
+distinguished_name = req_dn
+
+[ req_dn ]
+
+# Erweiterungen für die CA selbst: darf Zertifikate signieren, aber keine Unter-CAs.
+[ v3_ca ]
+basicConstraints     = critical, CA:true, pathlen:0
+keyUsage             = critical, keyCertSign, cRLSign
+subjectKeyIdentifier = hash
+
+# Erweiterungen für das Server-Zertifikat. Browser und Go-Programme prüfen nur
+# den subjectAltName, nicht den Common Name.
+[ v3_server ]
+basicConstraints       = critical, CA:false
+keyUsage               = critical, digitalSignature, keyEncipherment
+extendedKeyUsage       = serverAuth
+subjectAltName         = @alt_names
+subjectKeyIdentifier   = hash
+authorityKeyIdentifier = keyid, issuer
+
+[ alt_names ]
+DNS.1 = *.obs.internal
+DNS.2 = obs.internal

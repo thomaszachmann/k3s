@@ -1,0 +1,15 @@
+# Basic Auth vor allen Push-Endpunkten der Zentrale. Ein Benutzer pro Cluster
+# (obs, app1, app2). Die Benutzerliste im htpasswd-Format liegt im Secret
+# obs-basic-auth-users (Schlüssel users) und kommt nie ins Repo.
+# Referenz in Ingress-Objekten:
+#   traefik.ingress.kubernetes.io/router.middlewares: monitoring-obs-basic-auth@kubernetescrd
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: obs-basic-auth
+  namespace: monitoring
+spec:
+  basicAuth:
+    secret: obs-basic-auth-users
+    # Den Authorization-Header nicht an Receive, Loki oder Tempo weiterreichen.
+    removeHeader: true

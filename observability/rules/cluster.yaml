@@ -1,0 +1,26 @@
+# Globale Regeln: der Thanos Ruler wertet sie über Thanos Query aus (Kapitel 7).
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: global-cluster
+  namespace: monitoring
+  labels:
+    auswertung: global
+spec:
+  groups:
+    - name: cluster
+      rules:
+        # Ein Cluster, der in den letzten 6 Stunden Metriken geliefert hat,
+        # jetzt aber keine einzige up-Serie mehr hat.
+        - alert: ClusterSchweigt
+          expr: |
+            group by (cluster) (max_over_time(up{cluster!=""}[6h]))
+            unless
+            group by (cluster) (up{cluster!=""})
+          for: 3m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Cluster {{ $labels.cluster }} liefert keine Metriken mehr"
+            description: "Von {{ $labels.cluster }} kommt seit mindestens 3 Minuten keine up-Serie mehr bei Thanos an. Alle anderen Alarme dieses Clusters werden unterdrückt."
+            runbook_url: https://github.com/thomaszachmann/k3s/blob/main/observability/rules/runbooks.md#clusterschweigt

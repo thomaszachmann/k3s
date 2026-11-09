@@ -1,0 +1,17 @@
+# Optional: Pyroscope 2.4.3 (Chart grafana/pyroscope 2.4.3) auf obs,
+# ein einzelner Pod mit lokalem Speicher. Nur zum Ausprobieren.
+pyroscope:
+  replicaCount: 1
+  persistence:
+    enabled: true
+    size: 5Gi
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      memory: 1Gi
+
+# Das Chart bringt sonst ein eigenes Alloy mit. Du hast schon eins.
+alloy:
+  enabled: false

@@ -1,0 +1,32 @@
+// Velero-Metriken aus dem Namespace velero (Kapitel 12).
+// Nur in Clustern mit metrics.alloy (app1, app2): nutzt dessen
+// prometheus.remote_write "metrics_obs". Praefix backup_ wie vereinbart.
+
+discovery.kubernetes "backup_velero" {
+  role = "pod"
+  namespaces {
+    names = ["velero"]
+  }
+}
+
+discovery.relabel "backup_velero" {
+  targets = discovery.kubernetes.backup_velero.targets
+
+  rule {
+    source_labels = ["__meta_kubernetes_pod_label_app_kubernetes_io_name"]
+    regex         = "velero"
+    action        = "keep"
+  }
+  rule {
+    source_labels = ["__meta_kubernetes_pod_container_port_name"]
+    regex         = "http-monitoring"
+    action        = "keep"
+  }
+}
+
+prometheus.scrape "backup_velero" {
+  targets         = discovery.relabel.backup_velero.output
+  job_name        = "velero"
+  scrape_interval = "60s"
+  forward_to      = [prometheus.remote_write.metrics_obs.receiver]
+}

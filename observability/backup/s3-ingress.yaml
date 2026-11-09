@@ -1,0 +1,29 @@
+# SeaweedFS fuer die Sicherungen von aussen erreichbar machen (Kapitel 12).
+# Nur HTTPS. Keine Basic Auth: S3 prueft jede Anfrage selbst per Signatur
+# (SigV4) gegen die Konten in s3-config. Basic Auth braeuchte denselben
+# Authorization-Header und wuerde die Signatur verdraengen.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: s3
+  namespace: monitoring
+  annotations:
+    traefik.ingress.kubernetes.io/router.entrypoints: websecure
+    traefik.ingress.kubernetes.io/router.tls: "true"
+spec:
+  ingressClassName: traefik
+  tls:
+    - hosts:
+        - s3.obs.internal
+      secretName: obs-tls
+  rules:
+    - host: s3.obs.internal
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: s3
+                port:
+                  number: 8333

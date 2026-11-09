@@ -1,0 +1,36 @@
+# Globale Regeln für Workloads in allen Clustern (Kapitel 7).
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: global-workloads
+  namespace: monitoring
+  labels:
+    auswertung: global
+spec:
+  groups:
+    - name: workloads
+      rules:
+        - alert: PodCrashLoop
+          expr: |
+            max_over_time(
+              kube_pod_container_status_waiting_reason{job="kube-state-metrics", reason="CrashLoopBackOff"}[5m]
+            ) >= 1
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: "{{ $labels.cluster }}/{{ $labels.namespace }}/{{ $labels.pod }} startet immer wieder neu"
+            description: "Container {{ $labels.container }} hängt seit 10 Minuten in CrashLoopBackOff."
+            runbook_url: https://github.com/thomaszachmann/k3s/blob/main/observability/rules/runbooks.md#podcrashloop
+        - alert: DeploymentUnvollstaendig
+          expr: |
+            kube_deployment_spec_replicas{job="kube-state-metrics"}
+            >
+            kube_deployment_status_replicas_available{job="kube-state-metrics"}
+          for: 15m
+          labels:
+            severity: warning
+          annotations:
+            summary: "{{ $labels.cluster }}/{{ $labels.namespace }}/{{ $labels.deployment }} hat zu wenige bereite Pods"
+            description: "Seit 15 Minuten laufen weniger Replikas als gewünscht."
+            runbook_url: https://github.com/thomaszachmann/k3s/blob/main/observability/rules/runbooks.md#deploymentunvollstaendig

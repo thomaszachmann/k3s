@@ -1,0 +1,45 @@
+# Lastgenerator für HotROD (Kapitel 9): bestellt alle paar Sekunden eine
+# Fahrt für einen zufälligen Kunden. So entstehen laufend Traces.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: hotrod-last
+  namespace: demo
+  labels:
+    app.kubernetes.io/name: hotrod-last
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: hotrod-last
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: hotrod-last
+    spec:
+      containers:
+        - name: curl
+          image: curlimages/curl:8.22.0
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              while true; do
+                for kunde in 123 392 567 731; do
+                  curl -s -o /dev/null "http://hotrod.demo.svc:8080/dispatch?customer=$kunde"
+                  sleep 3
+                done
+              done
+          securityContext:
+            allowPrivilegeEscalation: false
+            runAsNonRoot: true
+            runAsUser: 65534
+            capabilities:
+              drop: ["ALL"]
+            seccompProfile:
+              type: RuntimeDefault
+          resources:
+            requests:
+              cpu: 5m
+              memory: 8Mi
+            limits:
+              memory: 32Mi

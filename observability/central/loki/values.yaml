@@ -1,0 +1,102 @@
+# Loki auf obs (Kapitel 8). Chart grafana-community/loki 21.0.0 (Loki 3.7.9).
+# Ein Prozess (Monolithic), Daten im SeaweedFS-Bucket "loki".
+# Jeder Cluster schreibt als eigener Mandant (X-Scope-OrgID = Clustername).
+deploymentMode: Monolithic
+
+loki:
+  auth_enabled: true
+  commonConfig:
+    replication_factor: 1
+  schemaConfig:
+    configs:
+      - from: "2026-11-01"
+        store: tsdb
+        object_store: s3
+        schema: v13
+        index:
+          prefix: loki_index_
+          period: 24h
+  storage:
+    type: s3
+    bucketNames:
+      chunks: loki
+      ruler: loki
+      admin: loki
+    s3:
+      endpoint: http://s3.monitoring.svc.cluster.local:8333
+      region: us-east-1
+      # Loki setzt die Werte beim Start aus dem Secret loki-s3 ein.
+      accessKeyId: ${AWS_ACCESS_KEY_ID}
+      secretAccessKey: ${AWS_SECRET_ACCESS_KEY}
+      s3ForcePathStyle: true
+      insecure: true
+  # Grafana darf mit "obs|app1|app2" alle Mandanten zugleich abfragen.
+  querier:
+    multi_tenant_queries_enabled: true
+  limits_config:
+    retention_period: 168h
+    # Schutz vor zu vielen Streams pro Mandant (Label-Disziplin).
+    max_global_streams_per_user: 5000
+    max_label_names_per_series: 15
+    ingestion_rate_mb: 4
+    ingestion_burst_size_mb: 8
+  compactor:
+    working_directory: /var/loki/compactor
+    retention_enabled: true
+    retention_delete_delay: 2h
+    delete_request_store: s3
+  # Regeln liegen lokal unter /rules/<mandant>/, der Sidecar füllt sie.
+  rulerConfig:
+    storage:
+      type: local
+      local:
+        directory: /rules
+    rule_path: /var/loki/rules-temp
+    alertmanager_url: http://alertmanager-operated.monitoring.svc:9093
+    enable_api: true
+    ring:
+      kvstore:
+        store: inmemory
+
+singleBinary:
+  replicas: 1
+  extraEnvFrom:
+    - secretRef:
+        name: loki-s3
+  persistence:
+    enabled: true
+    size: 10Gi
+    storageClass: local-path
+  resources:
+    requests:
+      cpu: 100m
+      memory: 512Mi
+    limits:
+      memory: 1536Mi
+
+# Der Sidecar lädt ConfigMaps mit dem Label loki_rule aus dem Namespace
+# monitoring. Die Annotation legt den Unterordner (= Mandant) fest.
+sidecar:
+  rules:
+    label: loki_rule
+    labelValue: "1"
+    folder: /rules
+    folderAnnotation: loki_rule_folder
+
+# Auf einem kleinen Node sparen diese Abschaltungen viel RAM.
+gateway:
+  enabled: false
+chunksCache:
+  enabled: false
+resultsCache:
+  enabled: false
+lokiCanary:
+  enabled: false
+test:
+  enabled: false
+backend:
+  replicas: 0
+read:
+  replicas: 0
+write:
+  replicas: 0

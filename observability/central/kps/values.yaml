@@ -1,0 +1,108 @@
+# kube-prometheus-stack auf obs, Grundwerte (Kapitel 4).
+# Spätere Kapitel ergänzen grafana.yaml (Kapitel 6) und alerting.yaml (Kapitel 7):
+#   helm upgrade kps ... -f values.yaml -f grafana.yaml -f alerting.yaml
+
+# Diese Komponenten laufen bei k3s im k3s-Prozess und lauschen nur auf
+# 127.0.0.1. Prometheus erreicht sie nicht, die Ziele wären dauerhaft "down".
+kubeControllerManager:
+  enabled: false
+kubeScheduler:
+  enabled: false
+kubeProxy:
+  enabled: false
+
+# etcd bietet seine Metriken dank etcd-expose-metrics auf der Node-IP an.
+kubeEtcd:
+  enabled: true
+  endpoints:
+    - 172.16.0.150
+  service:
+    port: 2381
+    targetPort: 2381
+
+# Die Standardregeln des Charts wertet Prometheus auf obs aus. Das Label
+# auswertung: lokal sorgt dafür, dass der ruleSelector unten sie findet.
+defaultRules:
+  create: true
+  labels:
+    auswertung: lokal
+
+prometheus:
+  prometheusSpec:
+    # Nur kurz lokal, alles andere liegt in Thanos Receive und S3.
+    retention: 6h
+    scrapeInterval: 30s
+    evaluationInterval: 30s
+    # Jede Serie von obs trägt cluster="obs", genau wie die der App-Cluster.
+    externalLabels:
+      cluster: obs
+    # Alle ServiceMonitors, PodMonitors und Probes einsammeln, nicht nur
+    # die mit dem Label release: kps.
+    serviceMonitorSelectorNilUsesHelmValues: false
+    podMonitorSelectorNilUsesHelmValues: false
+    probeSelectorNilUsesHelmValues: false
+    scrapeConfigSelectorNilUsesHelmValues: false
+    # Regeln: Standardregeln und PrometheusRules mit auswertung: lokal.
+    # Regeln mit auswertung: global wertet der Thanos Ruler aus.
+    ruleSelector:
+      matchLabels:
+        auswertung: lokal
+    ruleNamespaceSelector: {}
+    remoteWrite:
+      - name: thanos-receive
+        url: http://thanos-receive.monitoring.svc:19291/api/v1/receive
+        headers:
+          THANOS-TENANT: obs
+        # Exemplars mitschicken: Grundlage für den Sprung Metrik -> Trace.
+        sendExemplars: true
+    # Exemplars muss Prometheus erst einmal selbst speichern.
+    enableFeatures:
+      - exemplar-storage
+    resources:
+      requests:
+        cpu: 200m
+        memory: 1Gi
+      limits:
+        memory: 2Gi
+    storageSpec:
+      volumeClaimTemplate:
+        spec:
+          storageClassName: local-path
+          accessModes: [ReadWriteOnce]
+          resources:
+            requests:
+              storage: 10Gi
+
+alertmanager:
+  enabled: true
+  alertmanagerSpec:
+    resources:
+      requests:
+        cpu: 20m
+        memory: 64Mi
+      limits:
+        memory: 256Mi
+
+# Der Thanos Ruler wertet globale Regeln über alle Cluster aus.
+# Er fragt dafür Thanos Query, nicht Prometheus.
+thanosRuler:
+  enabled: true
+  thanosRulerSpec:
+    ruleSelector:
+      matchLabels:
+        auswertung: global
+    ruleNamespaceSelector: {}
+    queryEndpoints:
+      - thanos-query.monitoring.svc.cluster.local:10902
+    evaluationInterval: 30s
+    resources:
+      requests:
+        cpu: 50m
+        memory: 128Mi
+      limits:
+        memory: 512Mi
+
+# Grafana läuft mit den Standardwerten des Charts. Ingress, Admin-Secret,
+# Datenquellen und Dashboards ergänzt grafana.yaml in Kapitel 6.
+grafana:
+  enabled: true

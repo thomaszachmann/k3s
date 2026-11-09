@@ -1,0 +1,40 @@
+# Welche Adressen der Blackbox-Exporter prueft. Prometheus auf obs holt
+# die Ergebnisse ueber den Exporter ab (Label release: kps fuer den Selektor).
+apiVersion: monitoring.coreos.com/v1
+kind: Probe
+metadata:
+  name: obs-grafana
+  namespace: monitoring
+  labels:
+    release: kps
+spec:
+  jobName: blackbox
+  interval: 60s
+  module: http_2xx
+  prober:
+    url: blackbox-prometheus-blackbox-exporter.monitoring.svc:9115
+  targets:
+    staticConfig:
+      static:
+        - https://grafana.obs.internal/api/health
+---
+apiVersion: monitoring.coreos.com/v1
+kind: Probe
+metadata:
+  name: obs-endpunkte
+  namespace: monitoring
+  labels:
+    release: kps
+spec:
+  jobName: blackbox
+  interval: 60s
+  module: http_basic_auth
+  prober:
+    url: blackbox-prometheus-blackbox-exporter.monitoring.svc:9115
+  targets:
+    staticConfig:
+      static:
+        - https://receive.obs.internal/api/v1/receive
+        - https://loki.obs.internal/loki/api/v1/push
+        - https://tempo.obs.internal/v1/traces
+        - https://alertmanager.obs.internal/
