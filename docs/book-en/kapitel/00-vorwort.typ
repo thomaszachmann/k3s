@@ -18,6 +18,18 @@ Installing individual security tools is quick. The hard part is something else: 
 
 You build the architecture layer by layer. Every chapter follows the same flow: first you learn which problem is being solved. Then you type command after command, check the result, and try something yourself. There are no long scripts.
 
+== First, Clone the Repo
+
+Every configuration file this book refers to lives in a public repository on GitHub: #link("https://github.com/thomaszachmann/k3s")[github.com/thomaszachmann/k3s]. Get it before you start chapter 2.
+
+#cmd("Mac")[```bash
+git clone https://github.com/thomaszachmann/k3s.git
+```][Downloads the repo with all its files into the new folder `k3s`.]
+
+#cmd("Mac")[```bash
+cd k3s
+```][Switches to the root directory of the repo. All commands labeled *Mac* run from here.]
+
 == Where You Run a Command
 
 Every command carries a colored label. It tells you where you are right now:
@@ -60,7 +72,7 @@ So expect something to differ at some point. That is no reason to worry. It is p
 
 - A fresh Ubuntu 24.04 VM with 4 CPUs, 8 GB RAM and at least 40 GB of disk. Nothing besides Ubuntu is installed.
 - On the laptop: `kubectl`, `helm`, `jq`, `openssl`, `curl` and the Kyverno CLI.
-- This repo with `k3s/config.yaml` and `cilium/values.yaml`.
+- The cloned repo with `k3s/config.yaml` and `cilium/values.yaml`, plus `git` on your laptop.
 - About two weekends of time, or one chapter per evening.
 
 #hinweis("A Word on the Order", akzent, akzent-hell)[

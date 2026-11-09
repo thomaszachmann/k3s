@@ -18,6 +18,18 @@ Einzelne Sicherheitstools sind schnell installiert. Schwer ist etwas anderes: zu
 
 Du baust die Architektur Schicht für Schicht auf. Jedes Kapitel hat denselben Ablauf: Du erfährst zuerst, welches Problem gelöst wird. Dann tippst du Befehl für Befehl, prüfst das Ergebnis und probierst selbst etwas aus. Lange Skripte gibt es nicht.
 
+== Zuerst das Repo klonen
+
+Alle Konfigurationsdateien, auf die sich das Buch bezieht, liegen in einem öffentlichen Repository auf GitHub: #link("https://github.com/thomaszachmann/k3s")[github.com/thomaszachmann/k3s]. Hol es dir, bevor du mit Kapitel 2 beginnst.
+
+#cmd("Mac")[```bash
+git clone https://github.com/thomaszachmann/k3s.git
+```][Lädt das Repo mit allen Dateien in den neuen Ordner `k3s`.]
+
+#cmd("Mac")[```bash
+cd k3s
+```][Wechselt ins Wurzelverzeichnis des Repos. Von hier aus laufen alle Befehle mit dem Etikett *Mac*.]
+
 == Wo du einen Befehl ausführst
 
 Jeder Befehl trägt ein farbiges Etikett. Es sagt dir, wo du dich gerade befindest:
@@ -60,7 +72,7 @@ Rechne also damit, dass an einer Stelle etwas abweicht. Das ist kein Grund zur S
 
 - Eine frische Ubuntu-24.04-VM mit 4 CPUs, 8 GB RAM und mindestens 40 GB Disk. Außer Ubuntu ist nichts installiert.
 - Auf dem Laptop `kubectl`, `helm`, `jq`, `openssl`, `curl` und die Kyverno-CLI.
-- Dieses Repo mit `k3s/config.yaml` und `cilium/values.yaml`.
+- Das geklonte Repo mit `k3s/config.yaml` und `cilium/values.yaml`, dazu `git` auf dem Laptop.
 - Rund zwei Wochenenden Zeit, oder ein Kapitel pro Abend.
 
 #hinweis("Ein Wort zur Reihenfolge", akzent, akzent-hell)[
