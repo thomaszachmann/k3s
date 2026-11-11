@@ -63,17 +63,15 @@ Ersetze `<user>` jeweils durch deinen SSH-Login. Die meiste Zeit arbeitest du au
 
 Ein Buch voller Befehle ist nur so gut wie seine Prüfung. Deshalb steht hier ehrlich, wie weit sie ging.
 
-*Geprüft am 9. November 2026:*
-- Alle Chart-Versionen stammen aus den offiziellen Helm-Repositories.
-- Alle Helm-Werte in diesem Buch wurden mit `helm template` gegen genau diese Chart-Versionen gerendert: kube-prometheus-stack, Loki, Tempo, Alloy, kube-state-metrics, node-exporter, Velero, Blackbox-Exporter und Pyroscope.
-- Alle Kubernetes-Manifeste und `PrometheusRule`-Dateien wurden mit `kubeconform` gegen Kubernetes 1.36 und die CRD-Schemas geprüft.
-- Alle Dashboards und JSON-Dateien sind syntaktisch gültig, die Shell-Skripte bestehen `shellcheck`.
-- Die Flags von Thanos, die Optionen von k3s und Velero sowie die Image-Tags wurden in der offiziellen Doku und in den Registries nachgeschlagen.
+*Auf echten Clustern durchgespielt am 11. November 2026:* Die Kapitel 2 bis 10 und 13 und der Velero-Teil von Kapitel 12 liefen Befehl für Befehl auf drei Ubuntu-VMs mit k3s `v1.36.6+k3s1`, mit genau den Versionen aus dem Anhang. Die Ausgaben in den Kästen „Das solltest du sehen“ stammen aus diesem Lauf, die Bilder der Oberflächen ebenfalls. Wo der Lauf Fehler im Buch aufgedeckt hat, sind sie korrigiert. Ausnahmen:
 
-*Nicht geprüft:*
-- Das Buch wurde *nicht* auf echten Clustern durchgespielt. Alle Ausgaben in den Kästen „Das solltest du sehen“ sind Beispiele.
-- Die Alloy-Konfigurationen, die PromQL-, LogQL- und TraceQL-Ausdrücke und die Alertmanager-Konfiguration folgen der offiziellen Doku, liefen aber nicht gegen die echten Programme.
-- Die Dashboards wurden nicht in einem laufenden Grafana geladen, die IAM-Policies nicht gegen AWS getestet.
+- Die Installation von k3s und das Zusammenführen der Kubeconfig in Kapitel 2 lagen vor dem Lauf und wurden nicht wiederholt.
+- Den Dead Man's Switch bei healthchecks.io ersetzte im Test eine interne Adresse, weil dafür ein eigenes Konto nötig ist.
+- Kapitel 11 (AWS) lief nicht gegen ein echtes AWS-Konto. Die etcd-Snapshots in Kapitel 12 brauchen SSH auf die VMs und wurden ebenfalls nicht ausgeführt. Beide Stellen sind im Text markiert.
+- Aus Kapitel 14 liefen die Messungen und Prüfbefehle, nicht aber Updates und das Aufräumen.
+- Kapitel 15 und 16 sind Lesekapitel. Was dort im Labor gemessen oder getestet wurde, steht ausdrücklich dabei, etwa ein Ausfall der Zentrale über 66 Minuten und die Mandantentrennung mit Thanos. Alles andere sind Architekturbeispiele.
+
+*Zusätzlich geprüft am 9. November 2026:* Alle Helm-Werte wurden mit `helm template` gegen die Chart-Versionen gerendert, alle Manifeste mit `kubeconform` gegen Kubernetes 1.36 geprüft, die Shell-Skripte bestehen `shellcheck`.
 
 Rechne also damit, dass an einer Stelle etwas abweicht. Das ist kein Grund zur Sorge, sondern Übung: Die Fehlersuche gehört zum Lernen, und Kapitel 14 hilft dir dabei.
 

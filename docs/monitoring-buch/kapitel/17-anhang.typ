@@ -7,7 +7,7 @@
 
 == Versionen
 
-Alle Angaben gelten für den Stand dieses Buches, 9. November 2026. Die Chart-Versionen stammen aus den offiziellen Helm-Repositories, die App-Versionen aus den Charts selbst.
+Alle Angaben gelten für den Stand dieses Buches, 11. November 2026. Mit genau diesen Versionen lief der Test auf echten Clustern. Die Chart-Versionen stammen aus den offiziellen Helm-Repositories, die App-Versionen aus den Charts selbst.
 
 #tabelle(
   (1fr, auto, auto),

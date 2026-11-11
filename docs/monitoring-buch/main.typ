@@ -4,7 +4,7 @@
   [Kubernetes\ beobachten],
   [Monitoring, Logging, Alerting und Tracing für mehrere k3s-Cluster, Befehl für Befehl aufgebaut],
   [Thomas Zachmann],
-  [Stand: 9. November 2026],
+  [Stand: 11. November 2026],
 )
 
 #show: buch
@@ -47,7 +47,7 @@
     ([Sicherheit], [Backup und Restore mit etcd-Snapshots und Velero]),
     ([Praxis], [Fertige Dashboards, direkt aus dem Repo]),
   ),
-  [Hands-on-Handbuch · Stand: 9. November 2026],
+  [Hands-on-Handbuch · Stand: 11. November 2026],
   autor: [Thomas Zachmann],
   autor-bild: "bilder/autor.jpg",
   autor-text: [Autor auf Leanpub],
