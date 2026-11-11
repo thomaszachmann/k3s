@@ -9,6 +9,10 @@
 
 SeaweedFS hat dich bis hierher gut getragen. Es hat aber einen Haken: Es liegt auf derselben VM wie alles andere. Stirbt die Disk von `k3s-obs`, sind Metriken, Logs und Traces weg, und die Sicherungen aus Kapitel 12 gleich mit. AWS S3 löst genau das. Die Daten liegen außerhalb deines Labors, mehrfach gespiegelt, und du zahlst nur, was du belegst.
 
+#hinweis("Nicht im Labor durchgespielt", warn, warn-hell)[
+  Anders als die Kapitel 2 bis 10 lief dieses Kapitel nicht gegen ein echtes AWS-Konto. Die Befehle folgen der AWS-Doku und sind syntaktisch geprüft, aber Ausgaben und Fehlermeldungen können abweichen. Gehe Schritt für Schritt vor und vergleiche nach jedem Schritt mit dem Kasten „Das solltest du sehen“.
+]
+
 Der Umbau ist kleiner, als er klingt. Thanos, Loki und Tempo sprechen schon S3. Du tauschst nur Endpunkt, Bucket und Schlüssel aus.
 
 #warum[
@@ -46,11 +50,15 @@ Wie in SeaweedFS bekommt jede Komponente ihren eigenen Bucket. So kannst du Rech
 )
 
 #cmd("Mac")[```bash
-for b in thanos loki tempo backup; do
-  aws s3api create-bucket --bucket "$PRAEFIX-obs-$b" \
-    --create-bucket-configuration LocationConstraint=eu-central-1
-done
-```][Legt die vier Buckets in Frankfurt an. Außerhalb von `us-east-1` verlangt AWS die Region zusätzlich als `LocationConstraint`.]
+aws s3api create-bucket --bucket "$PRAEFIX-obs-thanos" \
+  --create-bucket-configuration LocationConstraint=eu-central-1
+aws s3api create-bucket --bucket "$PRAEFIX-obs-loki" \
+  --create-bucket-configuration LocationConstraint=eu-central-1
+aws s3api create-bucket --bucket "$PRAEFIX-obs-tempo" \
+  --create-bucket-configuration LocationConstraint=eu-central-1
+aws s3api create-bucket --bucket "$PRAEFIX-obs-backup" \
+  --create-bucket-configuration LocationConstraint=eu-central-1
+```][Legt die vier Buckets in Frankfurt an. `$PRAEFIX` hast du oben gesetzt, die Shell ersetzt es in jedem Befehl. Außerhalb von `us-east-1` verlangt AWS die Region zusätzlich als `LocationConstraint`.]
 
 Meldet AWS `BucketAlreadyExists`, hat jemand anderes auf der Welt diesen Namen schon. Wähle dann ein anderes Präfix.
 
@@ -59,18 +67,26 @@ Meldet AWS `BucketAlreadyExists`, hat jemand anderes auf der Welt diesen Namen s
 Neue Buckets sind heute schon privat und verschlüsselt. Du setzt alles trotzdem ausdrücklich. Dann steht es im Befehlsverlauf, und eine geänderte Voreinstellung bei AWS ändert nichts an deinen Buckets.
 
 #cmd("Mac")[```bash
-for b in thanos loki tempo backup; do
-  aws s3api put-public-access-block --bucket "$PRAEFIX-obs-$b" \
-    --public-access-block-configuration \
-    BlockPublicAcls=true,IgnorePublicAcls=true,BlockPublicPolicy=true,RestrictPublicBuckets=true
-done
+BLOCK=BlockPublicAcls=true,IgnorePublicAcls=true,BlockPublicPolicy=true,RestrictPublicBuckets=true
+aws s3api put-public-access-block --bucket "$PRAEFIX-obs-thanos" \
+  --public-access-block-configuration "$BLOCK"
+aws s3api put-public-access-block --bucket "$PRAEFIX-obs-loki" \
+  --public-access-block-configuration "$BLOCK"
+aws s3api put-public-access-block --bucket "$PRAEFIX-obs-tempo" \
+  --public-access-block-configuration "$BLOCK"
+aws s3api put-public-access-block --bucket "$PRAEFIX-obs-backup" \
+  --public-access-block-configuration "$BLOCK"
 ```][Block Public Access mit allen vier Schaltern. Selbst eine versehentlich öffentliche Policy oder ACL greift dann nicht mehr.]
 
 #cmd("Mac")[```bash
-for b in thanos loki tempo backup; do
-  aws s3api put-bucket-encryption --bucket "$PRAEFIX-obs-$b" \
-    --server-side-encryption-configuration file://observability/aws/encryption.json
-done
+aws s3api put-bucket-encryption --bucket "$PRAEFIX-obs-thanos" \
+  --server-side-encryption-configuration file://observability/aws/encryption.json
+aws s3api put-bucket-encryption --bucket "$PRAEFIX-obs-loki" \
+  --server-side-encryption-configuration file://observability/aws/encryption.json
+aws s3api put-bucket-encryption --bucket "$PRAEFIX-obs-tempo" \
+  --server-side-encryption-configuration file://observability/aws/encryption.json
+aws s3api put-bucket-encryption --bucket "$PRAEFIX-obs-backup" \
+  --server-side-encryption-configuration file://observability/aws/encryption.json
 ```][`observability/aws/encryption.json` setzt `"SSEAlgorithm": "AES256"`. Das ist SSE-S3: AWS verschlüsselt jedes Objekt beim Schreiben mit eigenen Schlüsseln.]
 
 #warum[
@@ -88,13 +104,18 @@ Verschlüsselung im Bucket hilft nicht, wenn die Daten unverschlüsselt hinflie�
 ```, erklaerung: [Ein `Deny` schlägt jedes `Allow`. `BUCKET` ist ein Platzhalter, der Befehl setzt den echten Namen ein.]]
 
 #cmd("Mac")[```bash
-for b in thanos loki tempo backup; do
-  sed "s|BUCKET|$PRAEFIX-obs-$b|g" observability/aws/bucket-policy-tls.json \
-    > /tmp/policy.json
-  aws s3api put-bucket-policy --bucket "$PRAEFIX-obs-$b" \
-    --policy file:///tmp/policy.json
-done
-```][Setzt die TLS-Pflicht pro Bucket. Die Datei in `/tmp` enthält keine Geheimnisse.]
+sed "s|BUCKET|$PRAEFIX-obs-thanos|g" observability/aws/bucket-policy-tls.json > /tmp/policy.json
+aws s3api put-bucket-policy --bucket "$PRAEFIX-obs-thanos" --policy file:///tmp/policy.json
+```][Setzt die TLS-Pflicht für den Bucket `thanos`. `sed` setzt den echten Namen in die Vorlage ein, die Datei in `/tmp` enthält keine Geheimnisse.]
+
+#cmd("Mac")[```bash
+sed "s|BUCKET|$PRAEFIX-obs-loki|g" observability/aws/bucket-policy-tls.json > /tmp/policy.json
+aws s3api put-bucket-policy --bucket "$PRAEFIX-obs-loki" --policy file:///tmp/policy.json
+sed "s|BUCKET|$PRAEFIX-obs-tempo|g" observability/aws/bucket-policy-tls.json > /tmp/policy.json
+aws s3api put-bucket-policy --bucket "$PRAEFIX-obs-tempo" --policy file:///tmp/policy.json
+sed "s|BUCKET|$PRAEFIX-obs-backup|g" observability/aws/bucket-policy-tls.json > /tmp/policy.json
+aws s3api put-bucket-policy --bucket "$PRAEFIX-obs-backup" --policy file:///tmp/policy.json
+```][Dasselbe für die übrigen drei Buckets, je zwei Zeilen pro Bucket.]
 
 #cmd("Mac")[```bash
 aws s3api put-bucket-versioning --bucket "$PRAEFIX-obs-backup" \
@@ -138,11 +159,15 @@ Eine Lifecycle-Regel löscht Objekte nach einer festen Zahl von Tagen oder versc
 Erhöhst du später die Retention in Loki oder Tempo, passt du zuerst die Lifecycle-Regel an. Sonst löscht S3 Daten, die das Tool noch für gültig hält.
 
 #cmd("Mac")[```bash
-for b in thanos loki tempo backup; do
-  aws s3api put-bucket-lifecycle-configuration --bucket "$PRAEFIX-obs-$b" \
-    --lifecycle-configuration file://observability/aws/lifecycle-$b.json
-done
-```][Setzt pro Bucket die passende Regel.]
+aws s3api put-bucket-lifecycle-configuration --bucket "$PRAEFIX-obs-thanos" \
+  --lifecycle-configuration file://observability/aws/lifecycle-thanos.json
+aws s3api put-bucket-lifecycle-configuration --bucket "$PRAEFIX-obs-loki" \
+  --lifecycle-configuration file://observability/aws/lifecycle-loki.json
+aws s3api put-bucket-lifecycle-configuration --bucket "$PRAEFIX-obs-tempo" \
+  --lifecycle-configuration file://observability/aws/lifecycle-tempo.json
+aws s3api put-bucket-lifecycle-configuration --bucket "$PRAEFIX-obs-backup" \
+  --lifecycle-configuration file://observability/aws/lifecycle-backup.json
+```][Setzt pro Bucket die passende Regel. Jeder Bucket bekommt seine eigene Datei.]
 
 #pruefe[
   `aws s3api get-bucket-lifecycle-configuration --bucket "$PRAEFIX-obs-backup"` zeigt die Regel `alte-versionen-und-uploads` mit `NoncurrentVersionExpiration` von 30 Tagen. Alte Versionen einer Sicherung verschwinden also erst nach einem Monat.
@@ -170,12 +195,19 @@ Die Backup-Policy erlaubt Schreiben und Löschen, verbietet aber ausdrücklich `
 #cmd("Mac")[```bash
 aws iam create-user --user-name obs-lab
 aws iam create-user --user-name obs-lab-backup
-for b in thanos loki tempo; do
-  sed "s|PRAEFIX|$PRAEFIX|g" observability/aws/iam-policy-$b.json > /tmp/policy.json
-  aws iam put-user-policy --user-name obs-lab \
-    --policy-name "obs-$b" --policy-document file:///tmp/policy.json
-done
-```][Legt die beiden technischen Benutzer an. Sie haben kein Passwort und können sich nicht in der Konsole anmelden. Die Schleife hängt drei Inline-Policies an `obs-lab`, eine pro Bucket. Inline-Policies verschwinden mit dem Benutzer, du räumst später also nichts doppelt auf.]
+```][Legt die beiden technischen Benutzer an. Sie haben kein Passwort und können sich nicht in der Konsole anmelden.]
+
+#cmd("Mac")[```bash
+sed "s|PRAEFIX|$PRAEFIX|g" observability/aws/iam-policy-thanos.json > /tmp/policy.json
+aws iam put-user-policy --user-name obs-lab \
+  --policy-name obs-thanos --policy-document file:///tmp/policy.json
+sed "s|PRAEFIX|$PRAEFIX|g" observability/aws/iam-policy-loki.json > /tmp/policy.json
+aws iam put-user-policy --user-name obs-lab \
+  --policy-name obs-loki --policy-document file:///tmp/policy.json
+sed "s|PRAEFIX|$PRAEFIX|g" observability/aws/iam-policy-tempo.json > /tmp/policy.json
+aws iam put-user-policy --user-name obs-lab \
+  --policy-name obs-tempo --policy-document file:///tmp/policy.json
+```][Hängt drei Inline-Policies an `obs-lab`, eine pro Bucket. Inline-Policies verschwinden mit dem Benutzer, du räumst später also nichts doppelt auf.]
 
 #cmd("Mac")[```bash
 sed "s|PRAEFIX|$PRAEFIX|g" observability/aws/iam-policy-backup.json > /tmp/policy.json
@@ -286,12 +318,14 @@ loki:
 ```, erklaerung: [Wird *nach* `observability/central/loki/values.yaml` angegeben und überschreibt nur diese Felder. `tempo-aws.yaml` setzt dasselbe unter `tempo.storage.trace.s3`.]]
 
 #cmd("Mac")[```bash
-for s in loki tempo; do
-  printf 'AWS_ACCESS_KEY_ID=%s\nAWS_SECRET_ACCESS_KEY=%s\n' "$AK" "$SK" |
-  kubectl --context obs -n monitoring create secret generic "$s-s3" \
+printf 'AWS_ACCESS_KEY_ID=%s\nAWS_SECRET_ACCESS_KEY=%s\n' "$AK" "$SK" |
+  kubectl --context obs -n monitoring create secret generic loki-s3 \
     --from-env-file=/dev/stdin --dry-run=client -o yaml |
   kubectl --context obs -n monitoring apply -f -
-done
+printf 'AWS_ACCESS_KEY_ID=%s\nAWS_SECRET_ACCESS_KEY=%s\n' "$AK" "$SK" |
+  kubectl --context obs -n monitoring create secret generic tempo-s3 \
+    --from-env-file=/dev/stdin --dry-run=client -o yaml |
+  kubectl --context obs -n monitoring apply -f -
 ```][Ersetzt die SeaweedFS-Schlüssel in beiden Secrets durch den AWS-Schlüssel von `obs-lab`.]
 
 #cmd("Mac")[```bash

@@ -25,8 +25,10 @@ Ein Update betrifft selten nur eine Komponente. Alloy spricht mit Receive, Grafa
 )
 
 #cmd("Mac")[```bash
-for c in obs app1 app2; do echo "== $c"; helm --kube-context $c list -A; done
-```][Zeigt alle Releases mit Chart- und App-Version pro Cluster. Vergleiche sie mit der Versions-Tabelle im Anhang.]
+helm --kube-context obs  list -A
+helm --kube-context app1 list -A
+helm --kube-context app2 list -A
+```][Zeigt alle Releases mit Chart- und App-Version, einen Block pro Cluster. Vergleiche sie mit der Versions-Tabelle im Anhang.]
 
 #cmd("Mac")[```bash
 helm repo update
@@ -108,7 +110,7 @@ openssl s_client -connect 172.16.0.126:443 -servername grafana.obs.internal \
 ```][Zeigt das Ablaufdatum des Zertifikats, das Traefik gerade ausliefert. Den Alarm dafür hast du in Kapitel 13 gebaut.]
 
 #falle[
-  Ein angehaltener Compactor fällt zuerst nicht auf. Receive lädt weiter hoch, Abfragen funktionieren. Aber nichts wird mehr verdichtet und nichts gelöscht, und der Bucket wächst ungebremst. Der Alarm `ThanosCompactorAngehalten` aus Kapitel 13 ist deshalb einer der wichtigsten.
+  Ein angehaltener Compactor fällt zuerst nicht auf. Receive lädt weiter hoch, Abfragen funktionieren. Aber nichts wird mehr verdichtet und nichts gelöscht, und der Bucket wächst ungebremst. Der Alarm `CompactorAngehalten` aus Kapitel 7 ist deshalb einer der wichtigsten.
 ]
 
 #aufgabe[
@@ -129,24 +131,31 @@ aws s3 rb "s3://$PRAEFIX-obs-tempo" --force
   Beim Backup-Bucket funktioniert `--force` nicht vollständig. Er hat Versionierung, und `rb --force` löscht nur die aktuellen Versionen. Leere ihn in der AWS-Konsole mit *Empty* und lösche ihn danach. Genau diesen Schutz hast du in Kapitel 11 gewollt.
 ]
 
+Ein IAM-Benutzer lässt sich erst löschen, wenn seine Schlüssel und Policies weg sind. Du gehst deshalb in drei Schritten vor, zuerst für `obs-lab`:
+
 #cmd("Mac")[```bash
-for u in obs-lab obs-lab-backup; do
-  for k in $(aws iam list-access-keys --user-name $u --query 'AccessKeyMetadata[].AccessKeyId' --output text); do
-    aws iam delete-access-key --user-name $u --access-key-id $k
-  done
-  for p in $(aws iam list-user-policies --user-name $u --query 'PolicyNames' --output text); do
-    aws iam delete-user-policy --user-name $u --policy-name $p
-  done
-  aws iam delete-user --user-name $u
-done
-```][Ein IAM-Benutzer lässt sich erst löschen, wenn Schlüssel und Policies weg sind.]
+aws iam list-access-keys --user-name obs-lab \
+  --query 'AccessKeyMetadata[].AccessKeyId' --output text
+aws iam list-user-policies --user-name obs-lab \
+  --query 'PolicyNames' --output text
+```][Zeigt die IDs der Zugangsschlüssel und die Namen der Policies. Du brauchst sie im nächsten Schritt.]
+
+#cmd("Mac")[```bash
+aws iam delete-access-key --user-name obs-lab --access-key-id <ID aus der Ausgabe>
+aws iam delete-user-policy --user-name obs-lab --policy-name <Name aus der Ausgabe>
+aws iam delete-user --user-name obs-lab
+```][Löscht Schlüssel, Policy und zuletzt den Benutzer. Hat der Benutzer mehrere Schlüssel oder Policies, wiederholst du die ersten beiden Zeilen für jeden.]
+
+Danach wiederholst du beide Schritte für den Benutzer `obs-lab-backup`.
 
 #cmd("app1")[```bash
 sudo /usr/local/bin/k3s-uninstall.sh
 ```][Entfernt k3s samt allen Daten von der VM. Auf allen drei VMs ausführen. Danach sind auch SeaweedFS und alle PVCs weg.]
 
 #cmd("Mac")[```bash
-for c in obs app1 app2; do kubectl config delete-context $c; done
+kubectl config delete-context obs
+kubectl config delete-context app1
+kubectl config delete-context app2
 ```][Entfernt die drei Kontexte aus `~/.kube/config`. Die Einträge für Cluster und Benutzer listet `kubectl config get-clusters` und `kubectl config get-users`, du löschst sie mit `delete-cluster` und `delete-user`.]
 
 Zum Schluss entfernst du die Zeilen mit `obs.internal` aus `/etc/hosts` auf dem Mac und löschst den privaten CA-Schlüssel `observability/tls/ca.key`. Ohne ihn kann niemand mehr Zertifikate ausstellen, denen deine Rechner vertrauen.
