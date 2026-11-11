@@ -30,13 +30,16 @@ In den App-Clustern läuft kein Prometheus. Ein schlanker Sammler genügt: Grafa
 Jeder Cluster bekommt einen eigenen Benutzer mit eigenem Passwort. Der Benutzername ist der Clustername. Das Passwort entsteht mit `openssl rand` und liegt nur im Secret `obs-remote-auth` des jeweiligen Clusters.
 
 #cmd("Mac")[```bash
-for c in obs app1 app2; do
-  kubectl --context $c -n monitoring create secret generic \
-    obs-remote-auth \
-    --from-literal=username=$c \
-    --from-literal=password="$(openssl rand -hex 24)"
-done
-```][Legt in allen drei Clustern das Secret an. obs bekommt auch eins, denn ab Kapitel 8 schickt Alloy auf obs Logs und Traces über denselben Weg. Das Passwort erscheint weder auf dem Bildschirm noch in der Shell-Historie.]
+kubectl --context obs -n monitoring create secret generic obs-remote-auth \
+  --from-literal=username=obs \
+  --from-literal=password="$(openssl rand -hex 24)"
+kubectl --context app1 -n monitoring create secret generic obs-remote-auth \
+  --from-literal=username=app1 \
+  --from-literal=password="$(openssl rand -hex 24)"
+kubectl --context app2 -n monitoring create secret generic obs-remote-auth \
+  --from-literal=username=app2 \
+  --from-literal=password="$(openssl rand -hex 24)"
+```][Legt in jedem Cluster das Secret an. `$(openssl rand -hex 24)` würfelt ein Passwort aus 48 Zeichen, das direkt im Secret landet. Es erscheint weder auf dem Bildschirm noch in der Shell-Historie. obs bekommt auch ein Secret, denn ab Kapitel 8 schickt Alloy auf obs Logs und Traces über denselben Weg.]
 
 #falle[
   Den Befehl nicht wiederholen, wenn die Secrets schon existieren. `create` bricht dann mit `already exists` ab, und das ist gut so: Ein neues Passwort im Cluster passt nicht mehr zur Benutzerliste auf obs. Willst du ein Passwort tauschen, löschst du das Secret und führst danach auch den nächsten Schritt erneut aus.
@@ -44,14 +47,25 @@ done
 
 Auf obs braucht Traefik die Benutzerliste im htpasswd-Format. Sie enthält pro Zeile einen Namen und einen Hash des Passworts, nie das Passwort selbst.
 
+Du baust die Liste in drei Schritten, einen pro Cluster. Jeder Schritt liest das Passwort aus dem Cluster, berechnet den Hash und hängt eine Zeile an eine Datei an:
+
 #cmd("Mac")[```bash
-for c in obs app1 app2; do
-  kubectl --context $c -n monitoring get secret obs-remote-auth \
-    -o jsonpath='{.data.password}' | base64 -d \
-    | openssl passwd -apr1 -stdin | sed "s/^/$c:/"
-done | kubectl --context obs -n monitoring create secret generic \
-  obs-basic-auth-users --from-file=users=/dev/stdin
-```][Liest jedes Passwort aus seinem Cluster, berechnet mit `openssl passwd -apr1` einen Hash und setzt den Clusternamen davor. Die drei Zeilen fließen direkt in das Secret `obs-basic-auth-users` auf obs. `-stdin` hält das Passwort aus der Prozessliste heraus.]
+kubectl --context obs -n monitoring get secret obs-remote-auth \
+  -o jsonpath='{.data.password}' | base64 -d \
+  | openssl passwd -apr1 -stdin | sed 's/^/obs:/' > users.htpasswd
+kubectl --context app1 -n monitoring get secret obs-remote-auth \
+  -o jsonpath='{.data.password}' | base64 -d \
+  | openssl passwd -apr1 -stdin | sed 's/^/app1:/' >> users.htpasswd
+kubectl --context app2 -n monitoring get secret obs-remote-auth \
+  -o jsonpath='{.data.password}' | base64 -d \
+  | openssl passwd -apr1 -stdin | sed 's/^/app2:/' >> users.htpasswd
+```][Lies jede Zeile von links nach rechts: Passwort aus dem Secret holen, Base64 entfernen, mit `openssl passwd -apr1` den Hash berechnen und mit `sed` den Clusternamen davorsetzen. `-stdin` hält das Passwort aus der Prozessliste heraus. Die erste Zeile legt die Datei mit `>` neu an, die beiden anderen hängen mit `>>` an.]
+
+#cmd("Mac")[```bash
+kubectl --context obs -n monitoring create secret generic \
+  obs-basic-auth-users --from-file=users=users.htpasswd
+rm users.htpasswd
+```][Legt das Secret auf obs an und löscht die Datei wieder. Sie enthält nur Hashes, keine Passwörter, gehört aber trotzdem nicht auf die Platte.]
 
 #cmd("Mac")[```bash
 kubectl --context obs -n monitoring get secret obs-basic-auth-users \
@@ -172,21 +186,25 @@ extraArgs:
 ])
 
 #cmd("Mac")[```bash
-for c in app1 app2; do
-  helm --kube-context $c upgrade --install kube-state-metrics \
-    prometheus-community/kube-state-metrics \
-    -n monitoring --version 9.0.0 \
-    -f observability/cluster/exporters/kube-state-metrics.yaml --wait
-done
-```][Installiert kube-state-metrics in beiden App-Clustern.]
+helm --kube-context app1 upgrade --install kube-state-metrics \
+  prometheus-community/kube-state-metrics \
+  -n monitoring --version 9.0.0 \
+  -f observability/cluster/exporters/kube-state-metrics.yaml --wait
+helm --kube-context app2 upgrade --install kube-state-metrics \
+  prometheus-community/kube-state-metrics \
+  -n monitoring --version 9.0.0 \
+  -f observability/cluster/exporters/kube-state-metrics.yaml --wait
+```][Installiert kube-state-metrics in beiden App-Clustern. Die beiden Befehle unterscheiden sich nur im Kontext.]
 
 #cmd("Mac")[```bash
-for c in app1 app2; do
-  helm --kube-context $c upgrade --install node-exporter \
-    prometheus-community/prometheus-node-exporter \
-    -n monitoring --version 5.0.0 \
-    -f observability/cluster/exporters/node-exporter.yaml --wait
-done
+helm --kube-context app1 upgrade --install node-exporter \
+  prometheus-community/prometheus-node-exporter \
+  -n monitoring --version 5.0.0 \
+  -f observability/cluster/exporters/node-exporter.yaml --wait
+helm --kube-context app2 upgrade --install node-exporter \
+  prometheus-community/prometheus-node-exporter \
+  -n monitoring --version 5.0.0 \
+  -f observability/cluster/exporters/node-exporter.yaml --wait
 ```][Installiert node-exporter als DaemonSet. Er läuft im Netz des Hosts auf Port 9100.]
 
 #cmd("Mac")[```bash
@@ -332,8 +350,8 @@ prometheus.remote_write "metrics_obs" {
   `external_labels` hängt `cluster` an jede Serie, der Header bestimmt den Mandanten in Receive. Zugangsdaten und Clustername stammen aus Umgebungsvariablen, die Datei selbst enthält kein Geheimnis. Die CA aus der ConfigMap `obs-ca` prüft das Zertifikat von `receive.obs.internal`.
 ])
 
-#hinweis("Nicht maschinell geprüft", warn, warn-hell)[
-  Die Alloy-Dateien dieses Buches sind sorgfältig gegen die Referenz-Doku von Alloy abgeglichen, aber nicht mit dem `alloy`-Programm getestet. Ein Tippfehler zeigt sich beim Start: Der Pod wird nicht bereit, und `kubectl logs` nennt Datei und Zeile.
+#hinweis("Getestet mit Alloy 1.21", akzent, akzent-hell)[
+  Die Alloy-Dateien dieses Buches liefen mit dem Chart `1.15.0`, das Alloy `v1.21.3` mitbringt. Ein Tippfehler zeigt sich beim Start: Der Pod wird nicht bereit, und `kubectl logs` nennt Datei und Zeile.
 ]
 
 == Alloy installieren
@@ -341,12 +359,13 @@ prometheus.remote_write "metrics_obs" {
 Zuerst legst du die ConfigMap an, danach Alloy. In app1 und app2 enthält sie vorerst nur `metrics.alloy`.
 
 #cmd("Mac")[```bash
-for c in app1 app2; do
-  kubectl --context $c -n monitoring create configmap alloy-config \
-    --from-file=observability/cluster/alloy/metrics.alloy \
-    --dry-run=client -o yaml | kubectl --context $c apply -f -
-done
-```][`--from-file` mit einer Datei nimmt den Dateinamen als Schlüssel, hier `metrics.alloy`. Das Muster aus `--dry-run` und `apply` funktioniert beim ersten Mal und bei jeder Änderung.]
+kubectl --context app1 -n monitoring create configmap alloy-config \
+  --from-file=observability/cluster/alloy/metrics.alloy \
+  --dry-run=client -o yaml | kubectl --context app1 apply -f -
+kubectl --context app2 -n monitoring create configmap alloy-config \
+  --from-file=observability/cluster/alloy/metrics.alloy \
+  --dry-run=client -o yaml | kubectl --context app2 apply -f -
+```][`--from-file` mit einer Datei nimmt den Dateinamen als Schlüssel, hier `metrics.alloy`. `create ... --dry-run=client -o yaml` baut die ConfigMap nur als Text, `apply` legt sie an oder aktualisiert sie. So funktioniert derselbe Befehl beim ersten Mal und bei jeder späteren Änderung.]
 
 #cmd("Mac")[```bash
 helm repo add grafana https://grafana.github.io/helm-charts
@@ -354,11 +373,12 @@ helm repo update grafana
 ```][Trägt das Grafana-Repository ein. Alloy liegt dort, nicht bei `grafana-community`.]
 
 #cmd("Mac")[```bash
-for c in app1 app2; do
-  helm --kube-context $c upgrade --install alloy grafana/alloy \
-    -n monitoring --version 1.15.0 \
-    -f observability/cluster/alloy/values.yaml --wait
-done
+helm --kube-context app1 upgrade --install alloy grafana/alloy \
+  -n monitoring --version 1.15.0 \
+  -f observability/cluster/alloy/values.yaml --wait
+helm --kube-context app2 upgrade --install alloy grafana/alloy \
+  -n monitoring --version 1.15.0 \
+  -f observability/cluster/alloy/values.yaml --wait
 ```][Installiert Alloy als DaemonSet in beiden App-Clustern. Das Chart bringt die Rechte für die Kubernetes-Discovery und für die Kubelet-Metriken mit.]
 
 #cmd("Mac")[```bash
@@ -369,25 +389,40 @@ kubectl --context app1 -n monitoring logs ds/alloy -c alloy --tail=30
   Keine Zeilen mit `level=error`. Steht dort `401`, passt das Passwort nicht zur Benutzerliste. `x509: certificate signed by unknown authority` heißt, dass `/etc/obs-ca/ca.crt` fehlt oder falsch ist. `no such host` deutet auf CoreDNS (Kapitel 2).
 ]
 
-Mit `kubectl port-forward svc/alloy 12345:12345` erreichst du außerdem die Oberfläche von Alloy unter #link("http://localhost:12345"). Sie zeigt alle Komponenten als Graph, gesunde sind grün.
+=== So testest du Alloy
+
+Alloy hat eine eigene Oberfläche. Sie zeigt, welche Komponenten geladen sind und ob sie arbeiten. Leite sie in einem zweiten Terminal auf den Mac um:
+
+#cmd("Mac")[```bash
+kubectl --context app1 -n monitoring port-forward svc/alloy 12345:12345
+```][Öffne danach #link("http://localhost:12345") im Browser.]
+
+#bild("bilder/05-alloy-komponenten.png", [Startseite der Alloy-Oberfläche: jede Komponente aus `metrics.alloy` mit ihrem Zustand. Alle müssen `Healthy` sein.])
+
+Mit *View* öffnest du eine Komponente und siehst ihre aktuellen Argumente und Ausgaben, bei `discovery.relabel` etwa die gefundenen Ziele. Der Menüpunkt *Graph* zeigt die ganze Kette so, wie du sie geschrieben hast:
+
+#bild("bilder/05-alloy-graph.png", [Menüpunkt *Graph*: links die Discovery, in der Mitte Relabel und Scrape, rechts der Versand an Receive. Orange Linien tragen Metriken, türkisfarbene die Liste der Ziele.])
+
+Ist eine Komponente rot, steht der Grund in ihrer Detailansicht. Beende den Port-Forward danach mit `Ctrl-C`.
 
 == Die Konfiguration aktualisieren
 
 Diesen Ablauf nutzt du jedes Mal, wenn sich eine `.alloy`-Datei ändert oder eine neue dazukommt. Die Kapitel 8 und 9 wiederholen ihn mit ihren Dateien.
 
 #cmd("Mac")[```bash
-for c in app1 app2; do
-  kubectl --context $c -n monitoring create configmap alloy-config \
-    --from-file=observability/cluster/alloy/metrics.alloy \
-    --dry-run=client -o yaml | kubectl --context $c apply -f -
-done
+kubectl --context app1 -n monitoring create configmap alloy-config \
+  --from-file=observability/cluster/alloy/metrics.alloy \
+  --dry-run=client -o yaml | kubectl --context app1 apply -f -
+kubectl --context app2 -n monitoring create configmap alloy-config \
+  --from-file=observability/cluster/alloy/metrics.alloy \
+  --dry-run=client -o yaml | kubectl --context app2 apply -f -
 ```][Schreibt die ConfigMap neu. Für jede weitere Datei hängst du eine eigene Zeile `--from-file=...` an. Nicht genannte Dateien verschwinden aus der ConfigMap.]
 
 #cmd("Mac")[```bash
-for c in app1 app2; do
-  kubectl --context $c -n monitoring rollout restart ds/alloy
-  kubectl --context $c -n monitoring rollout status ds/alloy
-done
+kubectl --context app1 -n monitoring rollout restart ds/alloy
+kubectl --context app1 -n monitoring rollout status ds/alloy
+kubectl --context app2 -n monitoring rollout restart ds/alloy
+kubectl --context app2 -n monitoring rollout status ds/alloy
 ```][Startet Alloy neu und wartet, bis alle Pods wieder bereit sind.]
 
 #warum[
@@ -413,6 +448,8 @@ Wechsle zurück zu Thanos Query auf obs.
 count by (tenant_id, cluster) (up)
 ```
 
+#bild("bilder/05-query-drei-cluster.png", [Dieselbe Abfrage wie in Kapitel 4, jetzt mit drei Zeilen.])
+
 #pruefe[
   Drei Zeilen: je eine für `obs`, `app1` und `app2`, und in jeder Zeile sind `tenant_id` und `cluster` gleich. In app1 und app2 zählt jede Zeile vier Ziele: Kubelet, cAdvisor, node-exporter und kube-state-metrics.
 ]
@@ -435,7 +472,15 @@ sum by (cluster) (kube_pod_status_phase{phase="Running"})
 ```
 
 #pruefe[
-  Jede Abfrage liefert drei Kurven, eine pro Cluster. Die erste zeigt verbrauchte CPU-Kerne, die zweite den freien Anteil des Arbeitsspeichers zwischen 0 und 1, die dritte laufende Pods. obs liegt überall deutlich höher, dort läuft die ganze Zentrale.
+  Jede Abfrage liefert drei Kurven, eine pro Cluster. Im Labor sahen die Werte so aus:
+  #tabelle(
+    (auto, auto, auto, auto),
+    ([Abfrage], [obs], [app1], [app2]),
+    [CPU-Kerne], [0,38], [0,04], [0,04],
+    [freier Speicher], [0,66], [0,66], [0,64],
+    [laufende Pods], [17], [9], [8],
+  )
+  Bei CPU und Pods liegt obs deutlich höher, dort läuft die ganze Zentrale. Beim freien Anteil des Speichers liegen alle gleichauf, weil obs dreimal so viel RAM hat.
 ]
 
 #aufgabe[

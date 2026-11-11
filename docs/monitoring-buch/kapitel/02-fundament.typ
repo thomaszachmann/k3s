@@ -442,7 +442,7 @@ Wer braucht was?
 kubectl --context obs -n monitoring create secret tls obs-tls \
   --cert=observability/tls/obs.internal.crt \
   --key=observability/tls/obs.internal.key
-```][Legt das Secret `obs-tls` vom Typ `kubernetes.io/tls` an. Dieser Typ hat genau zwei Schlüssel, `tls.crt` und `tls.key`, und Traefik weiß, wie er ihn liest. Die Ingress-Objekte der Zentrale verweisen ab Kapitel 4 darauf.]
+```][Legt das Secret `obs-tls` vom Typ `kubernetes.io/tls` an. Dieser Typ hat genau zwei Schlüssel, `tls.crt` und `tls.key`, und Traefik weiß, wie er ihn liest. Die Ingress-Objekte der Zentrale verweisen ab Kapitel 5 darauf.]
 
 #cmd("Mac")[```bash
 kubectl --context obs  -n monitoring create configmap obs-ca \
@@ -470,7 +470,7 @@ kubectl --context app2 -n monitoring get configmap obs-ca
   ```
 ]
 
-Ob Traefik das Zertifikat wirklich ausliefert, kannst du erst testen, wenn in Kapitel 4 der erste Ingress steht. Dort holst du das nach.
+Ob Traefik das Zertifikat wirklich ausliefert, kannst du erst testen, wenn in Kapitel 5 der erste Ingress steht. Der erste `curl` dort mit `--cacert` ist genau dieser Test.
 
 Auf dem Mac nutzen alle Befehle im Buch die CA direkt, etwa mit `curl --cacert observability/tls/ca.crt`. Möchtest du Grafana später ohne Warnung im Browser öffnen, kannst du der CA zusätzlich im Schlüsselbund vertrauen:
 
