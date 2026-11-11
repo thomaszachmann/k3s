@@ -147,7 +147,7 @@ otelcol.exporter.otlphttp "traces_tempo" {
   }
 }
 ```, erklaerung: [
-  `k8sattributes` erkennt den sendenden Pod an seiner IP-Adresse und hängt Namespace, Pod und Deployment an. Genau diese Attribute braucht Grafana später, um zu einem Span die passenden Logs zu finden. `transform` setzt das Ressourcen-Attribut `cluster`. Der Exporter schickt OTLP über HTTPS an Traefik, `otelcol.auth.basic` liefert Benutzer und Passwort aus `obs-remote-auth`. Die nötigen Leserechte für Pods und Namespaces bringt das Alloy-Chart schon mit.
+  `k8sattributes` erkennt den sendenden Pod an seiner IP-Adresse und hängt Namespace, Pod und Deployment an. Genau diese Attribute braucht Grafana später, um zu einem Span die passenden Logs zu finden. `transform` setzt das Ressourcen-Attribut `cluster`. Der Exporter schickt OTLP über HTTPS an Traefik, `otelcol.auth.basic` liefert Benutzer und Passwort aus `obs-remote-auth`. Dort stehen `username` und `password` direkt in der Komponente, obwohl die Doku sie als veraltet führt und den Block `client_auth` empfiehlt. Mit `client_auth` bricht Alloy bis mindestens Version 1.21.3 beim Start mit `no credential source provided` ab, weil es immer auch die Server-Seite der Anmeldung aufbaut und diese leer bleibt (Issue `grafana/alloy#5793`). Die nötigen Leserechte für Pods und Namespaces bringt das Alloy-Chart schon mit.
 ])
 
 #falle[

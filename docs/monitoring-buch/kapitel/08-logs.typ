@@ -100,7 +100,11 @@ kubectl --context obs -n monitoring port-forward svc/loki 3100:3100
 
 #cmd("Mac")[```bash
 curl -s localhost:3100/loki/api/v1/labels
-```][Eine Anfrage ohne Mandant. Erwartet ist die Antwort `no org id`: Loki verweigert Anfragen ohne Header. Mit `-H "X-Scope-OrgID: app1"` kommt `{"status":"success"}` zurück, noch ohne Labels.]
+```][Eine Anfrage ohne Mandant. Erwartet ist die Antwort `no org id`: Loki verweigert Anfragen ohne Header.]
+
+#cmd("Mac")[```bash
+curl -s -H "X-Scope-OrgID: obs" localhost:3100/loki/api/v1/labels
+```][Dieselbe Anfrage für den Mandanten `obs`. Jetzt kommt `{"status":"success"}` zurück, noch ohne Labels, denn Alloy schreibt erst ab dem nächsten Abschnitt.]
 
 == Alloy schickt die Logs
 
@@ -359,11 +363,22 @@ kubectl --context obs apply -k observability/rules/loki/
 ```][Legt die drei ConfigMaps im Namespace `monitoring` an.]
 
 #cmd("Mac")[```bash
-kubectl --context obs -n monitoring exec loki-0 -c loki -- ls -R /rules
-```][Zeigt, was der Sidecar abgelegt hat.]
+kubectl --context obs -n monitoring exec loki-0 -c loki-sc-rules -- ls -R /rules
+```][Zeigt, was der Sidecar abgelegt hat. Der Befehl läuft im Sidecar, nicht im Container `loki`: Das Loki-Image enthält kein `ls`. Beide Container teilen sich das Verzeichnis `/rules`.]
 
 #pruefe[
   Drei Ordner `obs`, `app1` und `app2`, in jedem die Datei `log-alarme.yaml`. Der Ruler liest den Ordner regelmäßig neu ein, ein Neustart ist nicht nötig.
+]
+
+Dateien im Ordner heißen noch nicht, dass der Ruler sie geladen hat. Das verrät dir seine API:
+
+#cmd("Mac")[```bash
+curl -s -H "X-Scope-OrgID: app1" \
+  localhost:3100/prometheus/api/v1/rules | jq -c '.data.groups[].rules[].name'
+```][Fragt den Ruler, welche Regeln er für den Mandanten `app1` geladen hat. Der Port-Forward muss noch laufen. Die Ruler-API nimmt nur einen Mandanten pro Anfrage, `obs|app1|app2` liefert hier nichts.]
+
+#pruefe[
+  Die Namen `"LogFehlerHaeufig"` und `"KubernetesWarnEvent"`. Fehlen sie, obwohl die Datei im Ordner liegt, hat Loki sie nicht lesen können. Die Ursache steht dann im Log von `loki-0`, meist ein YAML- oder LogQL-Fehler.
 ]
 
 Jetzt löst du einen Alarm aus. Ein Pod, der sofort endet, landet in `CrashLoopBackOff`, und Kubernetes schreibt `BackOff`-Events:

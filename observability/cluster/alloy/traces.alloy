@@ -59,11 +59,13 @@ otelcol.processor.batch "traces_batch" {
 }
 
 // 5. Anmeldung am Ingress auf obs (Basic Auth, ein Benutzer pro Cluster).
+// Bewusst die als veraltet markierten Attribute statt des Blocks client_auth:
+// Alloy baut immer auch die Server-Seite der Erweiterung. Mit nur client_auth
+// bleibt deren htpasswd leer und Alloy bricht mit "no credential source
+// provided" ab (grafana/alloy#5793, zuletzt geprüft mit v1.21.3).
 otelcol.auth.basic "traces_obs" {
-  client_auth {
-    username = sys.env("OBS_USER")
-    password = sys.env("OBS_PASSWORD")
-  }
+  username = sys.env("OBS_USER")
+  password = sys.env("OBS_PASSWORD")
 }
 
 // 6. Ziel: Tempo auf obs, als Mandant = Clustername.
