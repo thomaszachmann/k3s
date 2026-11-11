@@ -74,8 +74,8 @@ observability/
 │                   velero-values.yaml, velero-aws.yaml,
 │                   backup.alloy, velero-rules.yaml               (Kap. 12)
 └── extras/         blackbox-values.yaml, probes.yaml,
-                    blackbox-rules.yaml, meta-rules.yaml,
-                    receive-limits.yaml, slo-rules.yaml,
+                    blackbox-rules.yaml, receive-limits.yaml,
+                    slo-rules.yaml,
                     pyroscope-values.yaml,
                     pyroscope-datasource.yaml                     (Kap. 13)
 ```

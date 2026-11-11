@@ -27,7 +27,9 @@
 #include "kapitel/12-backup.typ"
 #include "kapitel/13-ergaenzungen.typ"
 #include "kapitel/14-betrieb.typ"
-#include "kapitel/15-anhang.typ"
+#include "kapitel/15-enterprise.typ"
+#include "kapitel/16-multi-tenancy.typ"
+#include "kapitel/17-anhang.typ"
 
 #rueckseite(
   [Kubernetes beobachten],

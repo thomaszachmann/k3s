@@ -46,6 +46,20 @@ Für mehrere Cluster gibt es zwei Grundmuster:
 
 Dieses Buch wählt die zentrale Variante. Sie ist einfacher zu betreiben, und die App-Cluster brauchen kaum Ressourcen. Den Nachteil, dass die Zentrale ein einzelner Punkt ist, behandelst du mit Meta-Monitoring und einem Dead Man's Switch in den Kapiteln 7 und 13.
 
+=== Was passiert, wenn obs ausfällt?
+
+An dieser Frage erkennst du, wie zuverlässig eine Architektur wirklich ist. Für dieses Buch wurde sie im Labor gemessen: Die Zentrale war für die App-Cluster 66 Minuten lang nicht erreichbar. Das Ergebnis in einem Satz: *Metriken kamen vollständig an, Logs zur Hälfte, Traces gar nicht.*
+
+#tabelle(
+  (auto, 1fr, auto),
+  ([Signal], [Wie Alloy puffert], [Nach 66 Minuten Ausfall]),
+  [Metriken], [Write-Ahead-Log auf der Platte, bis zu 8 Stunden], [nichts verloren],
+  [Logs], [im Speicher, gibt nach rund 8 Minuten auf], [rund 32 Minuten verloren],
+  [Traces], [im Speicher, gibt nach 5 Minuten auf], [alles verloren],
+)
+
+Alarme gibt es während des Ausfalls trotzdem: Die Zentrale merkt nach acht Minuten, dass zwei Cluster schweigen. Fällt dagegen die Zentrale selbst aus, kann sie niemanden mehr warnen. Das übernimmt der Dead Man's Switch aus Kapitel 7. Wie die Messung im Detail ablief und wie du die Plattform so baust, dass ein Ausfall möglichst nichts kostet, beschreibt Kapitel 15.
+
 == Push statt Pull
 
 Prometheus holt sich Metriken normalerweise selbst ab (_Pull_). Für die Zentrale drehen wir das um: Die App-Cluster schicken ihre Metriken per _Remote Write_ an Thanos Receive (_Push_). Dafür gibt es drei Gründe.
@@ -75,6 +89,37 @@ Jedes Signal nimmt seinen eigenen Weg, aber alle enden in S3 und in Grafana:
   [Alarme], [Prometheus, Thanos Ruler, Loki-Ruler], [Alertmanager auf obs], [–], [Mailpit, Watchdog-Dienst],
 )
 
+== Was läuft wo
+
+Die Tabelle oben zeigt die Wege der Daten. Die Skizze zeigt, auf welcher VM am Ende was läuft. Sie ist bewusst einfach gehalten: drei Kästen, ein Pfeil.
+
+#datei("Was läuft auf welcher VM (Endstand nach Kapitel 9)", ```text
+  Dein Mac: kubectl, helm, Browser
+     │ Port 6443 zu allen drei Clustern, Port 443 zu grafana.obs.internal
+     ▼
+  ┌─ k3s-obs (172.16.0.126), die Zentrale ──────────────────────┐
+  │ Traefik :443   receive · loki · tempo · grafana ·            │
+  │                alertmanager · s3  (.obs.internal)            │
+  │ Metriken  Prometheus ─► Thanos Receive ─► SeaweedFS (S3)     │
+  │           Thanos Query · Store · Compact · Ruler             │
+  │ Logs      Loki          ─► SeaweedFS                         │
+  │ Traces    Tempo         ─► SeaweedFS                         │
+  │ Ansicht   Grafana       Alarme  Alertmanager · Mailpit       │
+  │ Sammler   Alloy (nur Logs und Traces von obs selbst)         │
+  └──────────────────────────────▲───────────────────────────────┘
+                                 │ HTTPS mit Basic Auth,
+                                 │ nur ausgehend von app1 und app2
+             ┌───────────────────┴───────────────────┐
+  ┌─ k3s-app1 (172.16.0.228) ─┐       ┌─ k3s-app2 (172.16.0.83) ─┐
+  │ Alloy                     │       │ Alloy                     │
+  │ node-exporter             │       │ node-exporter             │
+  │ kube-state-metrics        │       │ kube-state-metrics        │
+  │ HotROD (Demo, Kapitel 9)  │       │                           │
+  └───────────────────────────┘       └───────────────────────────┘
+```, erklaerung: [
+  Alles Schwere läuft auf obs. In app1 und app2 laufen nur drei kleine Sammler und deine Anwendungen. Prometheus gibt es nur auf obs. In den App-Clustern übernimmt Alloy das Einsammeln und schickt die Daten weiter. SeaweedFS ist nur innerhalb von obs erreichbar. Erst Kapitel 12 öffnet es unter `s3.obs.internal` für die Backups.
+])
+
 Jeder Cluster schreibt als eigener *Mandant*. Thanos Receive erhält den Clusternamen im Header `THANOS-TENANT`, Loki und Tempo im Header `X-Scope-OrgID`. Zusätzlich trägt jede Serie, jeder Log-Stream und jede Span das Label `cluster`. So bleibt die Herkunft auch dann erkennbar, wenn du über alle Mandanten hinweg abfragst.
 
 Die Zentrale ist von außen nur über Traefik erreichbar, mit TLS aus einer eigenen kleinen CA und Basic Auth. Jeder Cluster hat einen eigenen Benutzer. Den S3-Speicher sieht niemand außerhalb von `obs`.
@@ -85,23 +130,27 @@ Die Zentrale ist von außen nur über Traefik erreichbar, mit TLS aus einer eige
 
 == Der Weg durch das Buch
 
+Das Buch baut die Plattform Schicht für Schicht auf. Jede Schicht prüfst du, bevor die nächste darauf aufsetzt. Die Tabelle zeigt die Reihenfolge, wo du arbeitest und woran du erkennst, dass ein Schritt gelungen ist:
+
 #tabelle(
-  (auto, 1fr, auto),
-  ([Kap.], [Inhalt], [Cluster]),
-  [2], [Drei k3s-Cluster, Kubeconfig-Kontexte, DNS und TLS], [alle],
-  [3], [S3 im Cluster mit SeaweedFS], [obs],
-  [4], [Die Zentrale: Prometheus und Thanos Receive], [obs],
-  [5], [Metriken aus den App-Clustern mit Alloy], [app1, app2],
-  [6], [Grafana als Code], [obs],
-  [7], [Alarme, die ankommen], [obs],
-  [8], [Logs mit Loki und Alloy], [alle],
-  [9], [Traces mit Tempo und OpenTelemetry], [alle],
-  [10], [Fertige Dashboards], [obs],
-  [11], [S3 auf AWS], [obs],
-  [12], [Backup und Restore], [alle],
-  [13], [Was sonst noch fehlt], [alle],
-  [14], [Betrieb und Fehlersuche], [alle],
-  [15], [Anhang: Versionen, Repo, Spickzettel], [–],
+  (auto, 1fr, auto, 1fr),
+  ([Kap.], [Was entsteht], [Wo], [Woran du siehst, dass es läuft]),
+  [2], [Drei k3s-Cluster, Kontexte auf dem Mac, Namen `*.obs.internal`, eigene CA], [alle], [`kubectl get nodes` in jedem Kontext, `nslookup` aus einem Pod],
+  [3], [S3-Speicher SeaweedFS mit vier Buckets und Konten], [obs], [`aws s3 ls` mit dem Konto `loki` zeigt nur `loki`],
+  [4], [Prometheus, Thanos Receive, Query, Store, Compact, Ruler], [obs], [Thanos Query zeigt `cluster="obs"`],
+  [5], [Alloy, node-exporter und kube-state-metrics, Zugang über HTTPS], [app1, app2], [Thanos Query zeigt alle drei Cluster],
+  [6], [Grafana mit Datenquellen aus dem Repo], [obs], [Login unter `grafana.obs.internal`, Explore zeigt drei Cluster],
+  [7], [Alarmregeln, Alertmanager, Mailpit, Dead Man's Switch], [obs], [Ein absichtlicher Ausfall erzeugt eine Mail],
+  [8], [Loki, Alloy sammelt Logs und Events, Log-Alarme], [alle], [Explore mit Loki zeigt Logs aller Cluster],
+  [9], [Tempo, Alloy nimmt Traces an, Demo-App HotROD], [alle], [TraceQL findet Traces, Sprung vom Log zum Trace],
+  [10], [Sieben fertige Dashboards], [obs], [Ordner *Plattform* und *Signale* in Grafana],
+  [11], [Umzug der Buckets zu AWS S3 (optional)], [obs], [Neue Blöcke landen bei AWS],
+  [12], [Backups: etcd-Snapshots und Velero], [alle], [Ein gelöschter Namespace kommt zurück],
+  [13], [Was sonst noch fehlt: Zertifikate, Profile, Rechte], [alle], [je Abschnitt],
+  [14], [Betrieb und Fehlersuche], [alle], [–],
+  [15], [Vom Labor zur Enterprise-Architektur: Hochverfügbarkeit], [–], [Ein Lesekapitel ohne Installation],
+  [16], [Enterprise-Observability: Multi-Tenancy mit Thanos], [–], [Ein Lesekapitel mit Tests im Labor],
+  [17], [Anhang: Versionen, Repo, Spickzettel], [–], [–],
 )
 
 Die Reihenfolge folgt dem Muster „erst beobachten, dann scharf schalten“. Zuerst fließen Metriken, dann siehst du sie in Grafana, erst danach kommen Alarme. Logs und Traces folgen, wenn das Fundament steht.
