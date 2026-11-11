@@ -12,12 +12,12 @@ data:
         errors
         cache 30
         hosts {
-            172.16.0.150 grafana.obs.internal
-            172.16.0.150 receive.obs.internal
-            172.16.0.150 loki.obs.internal
-            172.16.0.150 tempo.obs.internal
-            172.16.0.150 alertmanager.obs.internal
-            172.16.0.150 s3.obs.internal
+            172.16.0.126 grafana.obs.internal
+            172.16.0.126 receive.obs.internal
+            172.16.0.126 loki.obs.internal
+            172.16.0.126 tempo.obs.internal
+            172.16.0.126 alertmanager.obs.internal
+            172.16.0.126 s3.obs.internal
             fallthrough
         }
     }

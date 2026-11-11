@@ -100,10 +100,10 @@ Geh bei jedem Problem von außen nach innen vor: Was sagt Grafana, was sagen die
 #cmd("Mac")[```bash
 kubectl --context app1 run dnstest --rm -it --restart=Never \
   --image=busybox:1.37 -- nslookup receive.obs.internal
-```][Startet einen Wegwerf-Pod und fragt CoreDNS. Erwartet ist die Adresse `172.16.0.150`.]
+```][Startet einen Wegwerf-Pod und fragt CoreDNS. Erwartet ist die Adresse `172.16.0.126`.]
 
 #cmd("Mac")[```bash
-openssl s_client -connect 172.16.0.150:443 -servername grafana.obs.internal \
+openssl s_client -connect 172.16.0.126:443 -servername grafana.obs.internal \
   </dev/null 2>/dev/null | openssl x509 -noout -enddate
 ```][Zeigt das Ablaufdatum des Zertifikats, das Traefik gerade ausliefert. Den Alarm dafür hast du in Kapitel 13 gebaut.]
 

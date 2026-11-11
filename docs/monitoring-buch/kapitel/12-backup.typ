@@ -43,7 +43,7 @@ Die Datei `observability/backup/s3-ingress.yaml` ist gebaut wie die Ingresse aus
 kubectl --context obs apply -f observability/backup/s3-ingress.yaml
 ```][Legt den Ingress auf `obs` an.]
 
-In den Clustern löst CoreDNS die Zone `obs.internal` schon auf. Die Datei `observability/k3s/coredns-custom.yaml` enthält dafür jetzt eine zusätzliche Zeile `172.16.0.150 s3.obs.internal`.
+In den Clustern löst CoreDNS die Zone `obs.internal` schon auf. Die Datei `observability/k3s/coredns-custom.yaml` enthält dafür jetzt eine zusätzliche Zeile `172.16.0.126 s3.obs.internal`.
 
 #cmd("Mac")[```bash
 for c in obs app1 app2; do
@@ -56,12 +56,12 @@ k3s selbst läuft aber nicht im Cluster, sondern als Dienst auf der VM. Für die
 #cmd("Mac")[```bash
 for ip in 150 151 152; do
   ssh -t <user>@172.16.0.$ip \
-    'echo "172.16.0.150 s3.obs.internal" | sudo tee -a /etc/hosts'
+    'echo "172.16.0.126 s3.obs.internal" | sudo tee -a /etc/hosts'
 done
 ```][Ergänzt den Eintrag auf allen drei VMs. `-t` braucht `sudo` für die Passwortabfrage.]
 
 #cmd("Mac")[```bash
-echo "172.16.0.150 s3.obs.internal" | sudo tee -a /etc/hosts
+echo "172.16.0.126 s3.obs.internal" | sudo tee -a /etc/hosts
 curl -s --cacert observability/tls/ca.crt https://s3.obs.internal/ | head -c 200
 ```][Derselbe Eintrag auf dem Mac, danach eine Anfrage ohne Signatur, über TLS mit deiner CA.]
 
@@ -122,7 +122,7 @@ done
 ```][Kopiert das Drop-in auf alle drei VMs.]
 
 #cmd("Mac")[```bash
-ssh <user>@172.16.0.151
+ssh <user>@172.16.0.228
 ```][Meldet dich auf `k3s-app1` an. Die nächsten Schritte mit dem Etikett *app1* laufen dort.]
 
 #cmd("app1")[```bash
@@ -155,7 +155,7 @@ kubectl --context app2 create configmap restore-probe --from-literal=stand=vorhe
 ```][Die Markierung, im Namespace `default`.]
 
 #cmd("Mac")[```bash
-ssh <user>@172.16.0.152
+ssh <user>@172.16.0.83
 ```][Öffne eine zweite Sitzung auf `k3s-app2`. Die Befehle mit dem Etikett *Mac* laufen weiter im ersten Terminal.]
 
 #cmd("app2")[```bash

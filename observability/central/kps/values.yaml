@@ -15,7 +15,7 @@ kubeProxy:
 kubeEtcd:
   enabled: true
   endpoints:
-    - 172.16.0.150
+    - 172.16.0.126
   service:
     port: 2381
     targetPort: 2381

@@ -115,7 +115,7 @@ kubectl --context obs -n monitoring get ingress
 ```][Zeigt die drei Eingänge.]
 
 #pruefe[
-  `receive`, `loki` und `tempo` mit Klasse `traefik`, den passenden Hostnamen und Port `80, 443`. Unter `ADDRESS` steht `172.16.0.150`.
+  `receive`, `loki` und `tempo` mit Klasse `traefik`, den passenden Hostnamen und Port `80, 443`. Unter `ADDRESS` steht `172.16.0.126`.
 ]
 
 == Von außen prüfen

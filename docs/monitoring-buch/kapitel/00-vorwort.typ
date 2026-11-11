@@ -40,9 +40,9 @@ Jeder Befehl trägt ein farbiges Etikett. Es sagt dir, wo du dich gerade befinde
   (auto, 1fr),
   ([Etikett], [Bedeutung]),
   [#etikett(akzent, "Mac")], [Dein Terminal auf dem Laptop, im Wurzelverzeichnis des Repos. Von hier aus steuerst du alle drei Cluster mit `kubectl --context <name>`.],
-  [#etikett(warn, "obs")], [Eine SSH-Sitzung auf der VM `k3s-obs` (`172.16.0.150`), der Zentrale.],
-  [#etikett(warn, "app1")], [Eine SSH-Sitzung auf der VM `k3s-app1` (`172.16.0.151`).],
-  [#etikett(warn, "app2")], [Eine SSH-Sitzung auf der VM `k3s-app2` (`172.16.0.152`).],
+  [#etikett(warn, "obs")], [Eine SSH-Sitzung auf der VM `k3s-obs` (`172.16.0.126`), der Zentrale.],
+  [#etikett(warn, "app1")], [Eine SSH-Sitzung auf der VM `k3s-app1` (`172.16.0.228`).],
+  [#etikett(warn, "app2")], [Eine SSH-Sitzung auf der VM `k3s-app2` (`172.16.0.83`).],
   [#etikett(lila, "Pod")], [Eine Shell in einem Container, die du vorher mit `kubectl exec` geöffnet hast.],
 )
 
@@ -84,9 +84,9 @@ Rechne also damit, dass an einer Stelle etwas abweicht. Das ist kein Grund zur S
 #tabelle(
   (auto, auto, auto, 1fr),
   ([VM], [Hostname], [IP], [Größe]),
-  [Zentrale], [`k3s-obs`], [`172.16.0.150`], [4 CPUs, 12 GB RAM (mindestens 8), 80 GB Disk],
-  [App-Cluster 1], [`k3s-app1`], [`172.16.0.151`], [2 CPUs, 4 GB RAM, 30 GB Disk],
-  [App-Cluster 2], [`k3s-app2`], [`172.16.0.152`], [2 CPUs, 4 GB RAM, 30 GB Disk],
+  [Zentrale], [`k3s-obs`], [`172.16.0.126`], [4 CPUs, 12 GB RAM (mindestens 8), 80 GB Disk],
+  [App-Cluster 1], [`k3s-app1`], [`172.16.0.228`], [2 CPUs, 4 GB RAM, 30 GB Disk],
+  [App-Cluster 2], [`k3s-app2`], [`172.16.0.83`], [2 CPUs, 4 GB RAM, 30 GB Disk],
 )
 
 - Auf dem Laptop `kubectl`, `helm`, `jq`, `openssl`, `curl` und `git`. Ab Kapitel 11 zusätzlich die `aws`-CLI.
@@ -95,5 +95,5 @@ Rechne also damit, dass an einer Stelle etwas abweicht. Das ist kein Grund zur S
 - Rund drei Wochenenden Zeit, oder ein Kapitel pro Abend.
 
 #hinweis("Andere IP-Adressen?", akzent, akzent-hell)[
-  Die drei Adressen stehen in den k3s-Konfigurationen unter `observability/k3s/`, in `observability/k3s/coredns-custom.yaml` und in vielen Befehlen. Hast du andere, ersetze sie überall, bevor du mit Kapitel 2 beginnst. Ein `grep -rn 172.16.0.15 observability/` zeigt dir jede Stelle.
+  Die drei Adressen stehen in den k3s-Konfigurationen unter `observability/k3s/`, in `observability/k3s/coredns-custom.yaml` und in vielen Befehlen. Hast du andere, ersetze sie überall, bevor du mit Kapitel 2 beginnst. Ein `grep -rnE "172\.16\.0\.(126|228|83)" observability/` zeigt dir jede Stelle.
 ]

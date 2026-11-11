@@ -1,13 +1,13 @@
-# k3s-Konfiguration für die VM k3s-obs (172.16.0.150), Kontext "obs".
+# k3s-Konfiguration für die VM k3s-obs (172.16.0.126), Kontext "obs".
 # Zielpfad auf der VM: /etc/rancher/k3s/config.yaml
 # Muss vor der Installation dort liegen, sonst gelten die Standardwerte.
 # Standard-k3s: Flannel, Traefik, ServiceLB und local-path bleiben an.
 
 node-name: k3s-obs
-node-ip: 172.16.0.150
+node-ip: 172.16.0.126
 # Das API-Server-Zertifikat gilt auch für die IP, damit kubectl vom Mac aus prüfen kann.
 tls-san:
-  - 172.16.0.150
+  - 172.16.0.126
 
 # Eingebettetes etcd statt SQLite: Voraussetzung für Snapshots (Kapitel 12).
 cluster-init: true
