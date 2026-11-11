@@ -41,7 +41,7 @@ kubectl --context obs -n monitoring port-forward svc/mailpit 8025:8025
 ```][Läuft im Vordergrund weiter. Öffne ein zweites Terminal für die nächsten Schritte. Die Oberfläche erreichst du jetzt unter #link("http://localhost:8025").]
 
 #pruefe[
-  Mailpit zeigt einen leeren Posteingang.
+  Mailpit zeigt einen leeren Posteingang. Mailpit kannst du auch für andere Projekte nutzen: Jede Anwendung, die Mails über SMTP verschickt, schickst du im Test an `mailpit.monitoring.svc:1025` und siehst das Ergebnis hier, ohne dass eine Mail das Labor verlässt.
 ]
 
 == Der Dead Man's Switch
@@ -59,6 +59,10 @@ printf '%s' "$HC_URL" | kubectl --context obs -n monitoring \
   create secret generic alertmanager-deadmansswitch --from-file=url=/dev/stdin
 unset HC_URL
 ```][Legt das Secret mit dem Schlüssel `url` an. Der Wert läuft über die Standardeingabe und taucht nicht in der Prozessliste auf.]
+
+#falle[
+  *Eine falsche URL fällt sofort auf.* Antwortet die Ping-URL mit einem Fehler, etwa weil du beim Kopieren ein Zeichen verloren hast, feuern nach wenigen Minuten `AlertmanagerFailedToSendAlerts` und `AlertmanagerClusterFailedToSendAlerts` mit dem Integrationstyp `webhook`. Prüfe dann die URL mit `curl -fsS <url>`. Hast du kein Konto bei healthchecks.io, trage zum Üben `http://thanos-query.monitoring.svc:10902/-/healthy` ein. Dieser Endpunkt beantwortet jeden POST mit `200`, schützt dich aber natürlich nicht vor einem Ausfall.
+]
 
 #falle[
   Das Secret muss existieren, bevor du gleich `helm upgrade` ausführst. Der Alertmanager-Pod hängt es als Datei ein. Fehlt es, bleibt der Pod in `ContainerCreating` hängen, und `kubectl describe pod` meldet `secret "alertmanager-deadmansswitch" not found`.
@@ -276,7 +280,7 @@ kubectl --context obs get --raw \
 ```][Fragt die Regel-API des Rulers über den Service-Proxy des API-Servers ab. Das spart ein `port-forward`.]
 
 #pruefe[
-  Zehn Zeilen, jede mit `ok` als Gesundheit und meist `inactive` als Zustand. Steht dort `err`, zeigt `.lastError` in derselben Antwort den Grund, oft ein Tippfehler im Ausdruck oder Thanos Query nicht erreichbar. Fehlt eine Regel ganz, prüfe das Label `auswertung: global`.
+  Zehn Zeilen, jede mit `ok` als Gesundheit und meist `inactive` als Zustand. Direkt nach dem `apply` stehen sie bis zu einer Minute auf `unknown unknown`: Der Ruler hat die Dateien geladen, aber noch nicht ausgewertet. Warte kurz und frag erneut. Steht dort `err`, zeigt `.lastError` in derselben Antwort den Grund, oft ein Tippfehler im Ausdruck oder Thanos Query nicht erreichbar. Fehlt eine Regel ganz, prüfe das Label `auswertung: global`.
 ]
 
 == Ein Alarm von Anfang bis Ende
@@ -290,19 +294,21 @@ kubectl --context app2 -n monitoring patch daemonset alloy --type merge \
 
 Mit `kubectl --context app2 -n monitoring get daemonset alloy` siehst du, dass `DESIRED` und `CURRENT` auf `0` stehen.
 
-Jetzt heißt es warten. Die Zeiten sind geschätzt:
+Jetzt heißt es warten. Die Zeiten sind im Labor gemessen, ab dem `patch`:
 
 #tabelle(
   (auto, 1fr),
   ([Nach etwa], [Was passiert]),
   [0 Minuten], [Alloy ist weg. Die letzten Proben von app2 liegen in Thanos Receive.],
   [5 Minuten], [Die letzten Proben sind älter als das Lookback-Fenster von Abfragen. `up{cluster="app2"}` liefert nichts mehr.],
-  [5,5 Minuten], [Bei der nächsten Auswertung (alle 30 Sekunden) sieht der Ruler die Bedingung erfüllt. `ClusterSchweigt` steht auf `pending`.],
-  [8,5 Minuten], [Nach `for: 3m` wechselt der Alarm auf `firing` und geht an den Alertmanager.],
-  [8,5 Minuten und 10 Sekunden], [Nach `group_wait` verschickt der Alertmanager die Mail.],
+  [5 Minuten 19 Sekunden], [Bei der nächsten Auswertung (alle 30 Sekunden) sieht der Ruler die Bedingung erfüllt. `ClusterSchweigt` steht auf `pending`.],
+  [8 Minuten 24 Sekunden], [Nach `for: 3m` wechselt der Alarm auf `firing` und geht an den Alertmanager.],
+  [8 Minuten 34 Sekunden], [Nach `group_wait` von 10 Sekunden verschickt der Alertmanager die Mail.],
 )
 
-In Grafana kannst du zusehen: *Explore* mit Thanos und `count by (cluster) (up)` zeigt app2 ab etwa Minute fünf nicht mehr. Unter *Alerting → Alert rules* siehst du mit der Datenquelle Thanos die Regeln des Rulers mit ihrem Zustand.
+In Grafana kannst du zusehen: *Explore* mit Thanos und `count by (cluster) (up)` zeigt app2 ab etwa Minute fünf nicht mehr. Unter *Alerting → Alert rules* gibst du in das Suchfeld `datasource:Thanos` ein. Dann siehst du die Regeln des Rulers mit ihrem Zustand:
+
+#bild("bilder/07-grafana-alert-rules.png", [*Alerting → Alert rules* mit dem Filter `datasource:Thanos`: `ClusterSchweigt` feuert (rotes Symbol), die anderen Regeln sind grün. Grafana zeigt hier die Regeln des Rulers nur an, bearbeiten kannst du sie nur im Repo.])
 
 Den Alertmanager fragst du über seinen Ingress ab. Er ist per Basic Auth geschützt, du nutzt den Benutzer `obs` aus Kapitel 5.
 
@@ -328,8 +334,19 @@ kubectl --context obs get --raw \
 ```][Fragt die API von Mailpit ab, wieder über den Service-Proxy.]
 
 #pruefe[
-  Eine Mail mit einem Betreff wie `[FIRING:1] ClusterSchweigt app2 (critical)` an `apps@obs.internal, bereitschaft@obs.internal`. Die Route `cluster =~ "app1|app2"` und darunter `severity = "critical"` haben gegriffen. In der Oberfläche unter #link("http://localhost:8025") siehst du die ganze Mail mit dem Runbook-Link.
+  ```
+  [FIRING:1] ClusterSchweigt app2 (critical)  ->  apps@obs.internal, bereitschaft@obs.internal
+  ```
+  Die Route `cluster =~ "app1|app2"` und darunter `severity = "critical"` haben gegriffen.
 ]
+
+In der Oberfläche von Mailpit unter #link("http://localhost:8025") klickst du die Mail an und siehst sie so, wie sie im Postfach der Bereitschaft ankäme:
+
+#bild("bilder/07-mailpit-mail.png", [Die Alarm-Mail in Mailpit: Labels, Beschreibung und der Runbook-Link. *View In Alertmanager* führt direkt zur Oberfläche des Alertmanagers.])
+
+Der Alertmanager hat auch eine eigene Oberfläche. Öffne #link("https://alertmanager.obs.internal") und melde dich mit dem Benutzer `obs` und dem Passwort aus `obs-remote-auth` an, also demselben, das gerade in `AM_PW` steht:
+
+#bild("bilder/07-alertmanager-alarme.png", [Der Alertmanager gruppiert nach Empfänger: `apps-kritisch` hat den Alarm aus app2, `deadmansswitch` den Watchdog. Der Eintrag `apps` ist ein Log-Alarm, den du in Kapitel 8 baust. Mit den Kästchen *Silenced* und *Inhibited* oben rechts blendest du auch stumme Alarme ein.])
 
 Jetzt holst du Alloy zurück. Der Patch entfernt genau den Schlüssel, den du eben gesetzt hast.
 
@@ -339,12 +356,18 @@ kubectl --context app2 -n monitoring patch daemonset alloy --type json \
 ```][Alloy startet wieder und schickt Metriken, auch die gepufferten aus seinem WAL, soweit es welche hat.]
 
 #pruefe[
-  Nach zwei bis drei Minuten liegt in Mailpit eine zweite Mail mit `[RESOLVED]` im Betreff. Das bewirkt `send_resolved: true`.
+  Nach ein bis drei Minuten liegt in Mailpit eine zweite Mail mit `[RESOLVED] ClusterSchweigt app2 (critical)` im Betreff. Das bewirkt `send_resolved: true`. Im Labor kam sie nach 52 Sekunden.
 ]
 
 == Stummschalten ohne amtool
 
-Planst du Wartung, willst du keine Alarme. Dafür gibt es Silences: Sie schalten alle Alarme stumm, deren Labels zu den Matchern passen. Den Alertmanager-Befehl `amtool` brauchst du dafür nicht. Es gibt drei Wege: die Oberfläche unter #link("https://alertmanager.obs.internal") (Schaltfläche *New Silence*), Grafana unter *Alerting → Silences* mit der Datenquelle Alertmanager, und die HTTP-API. Die API ist der Weg, den du in Skripte einbauen kannst.
+Planst du Wartung, willst du keine Alarme. Dafür gibt es Silences: Sie schalten alle Alarme stumm, deren Labels zu den Matchern passen. Den Alertmanager-Befehl `amtool` brauchst du dafür nicht. Es gibt drei Wege: die Oberfläche des Alertmanagers, Grafana unter *Alerting → Silences* mit der Datenquelle Alertmanager, und die HTTP-API.
+
+In der Oberfläche klickst du oben rechts auf *New Silence*. Trage unter *Duration* die Dauer ein, unter *Matchers* einen oder mehrere Matcher wie `cluster="app1"` (jeweils mit `+` bestätigen) und unter *Comment* den Grund. *Preview Alerts* zeigt, welche Alarme betroffen wären, *Create* legt die Silence an.
+
+#bild("bilder/07-alertmanager-new-silence.png", [Das Formular *New Silence*: Dauer, Matcher und Kommentar sind die Pflichtangaben. *Preview Alerts* zeigt hier schon den Testalarm, den du im nächsten Schritt über die API anlegst.], breite: 85%)
+
+Die API ist der Weg, den du in Skripte einbauen kannst. Den nutzt du jetzt.
 
 Zum Üben brauchst du einen Alarm. Den schickst du selbst an die API, so wie es der Ruler tut:
 
