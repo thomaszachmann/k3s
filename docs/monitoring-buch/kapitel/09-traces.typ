@@ -86,7 +86,7 @@ kubectl --context obs -n monitoring logs tempo-0 --tail=30 \
 ```][Zeigt nur Warnungen und Fehler der letzten 30 Zeilen.]
 
 #pruefe[
-  Keine Ausgabe. `AccessDenied` weist auf das S3-Konto hin. Fehler mit `remote_write` und `connection refused` bedeuten, dass Thanos Receive nicht erreichbar ist. Das prüfst du in Kapitel 4 nach.
+  Im Leerlauf meldet Tempo alle 15 Sekunden ein Paar `level=warn ... no jobs found` und `level=error msg="error calling scheduler" ... no jobs found`. Das ist der Hintergrunddienst für die Kompaktierung, der nachfragt, ob es Arbeit gibt. Er hat einfach noch keine, das ist harmlos. Andere Fehler sind es nicht: `AccessDenied` weist auf das S3-Konto hin. Fehler mit `remote_write` und `connection refused` bedeuten, dass Thanos Receive nicht erreichbar ist. Das prüfst du in Kapitel 4 nach.
 ]
 
 == Alloy nimmt Traces an
@@ -157,16 +157,24 @@ otelcol.exporter.otlphttp "traces_tempo" {
 Die Ports 4317 und 4318 hat der Alloy-Service seit Kapitel 5. Jetzt kommt `traces.alloy` in die ConfigMap, auf dieselbe Weise wie in Kapitel 8:
 
 #cmd("Mac")[```bash
-for c in app1 app2; do
-  kubectl --context $c -n monitoring create configmap alloy-config \
-    --from-file=observability/cluster/alloy/metrics.alloy \
-    --from-file=observability/cluster/alloy/logs.alloy \
-    --from-file=observability/cluster/alloy/traces.alloy \
-    --dry-run=client -o yaml | kubectl --context $c apply -f -
-  kubectl --context $c -n monitoring rollout restart ds/alloy
-  kubectl --context $c -n monitoring rollout status ds/alloy
-done
-```][In den App-Clustern liegen jetzt alle drei Dateien in der ConfigMap.]
+kubectl --context app1 -n monitoring create configmap alloy-config \
+  --from-file=observability/cluster/alloy/metrics.alloy \
+  --from-file=observability/cluster/alloy/logs.alloy \
+  --from-file=observability/cluster/alloy/traces.alloy \
+  --dry-run=client -o yaml | kubectl --context app1 apply -f -
+kubectl --context app1 -n monitoring rollout restart ds/alloy
+kubectl --context app1 -n monitoring rollout status ds/alloy
+```][In app1 liegen jetzt alle drei Dateien in der ConfigMap.]
+
+#cmd("Mac")[```bash
+kubectl --context app2 -n monitoring create configmap alloy-config \
+  --from-file=observability/cluster/alloy/metrics.alloy \
+  --from-file=observability/cluster/alloy/logs.alloy \
+  --from-file=observability/cluster/alloy/traces.alloy \
+  --dry-run=client -o yaml | kubectl --context app2 apply -f -
+kubectl --context app2 -n monitoring rollout restart ds/alloy
+kubectl --context app2 -n monitoring rollout status ds/alloy
+```][Dasselbe für app2.]
 
 #cmd("Mac")[```bash
 kubectl --context obs -n monitoring create configmap alloy-config \
@@ -217,7 +225,31 @@ kubectl --context app1 -n demo logs deploy/hotrod --tail=5
 ```][Zeigt die letzten Log-Zeilen von HotROD.]
 
 #pruefe[
-  Zeilen wie `HTTP request received` oder `Search successful`. Am Ende jeder Zeile steht ein JSON-Block, der unter anderem `"trace_id"` und `"span_id"` enthält. Diese IDs nutzt du später für den Sprung vom Log zum Trace.
+  Zeilen wie diese:
+  ```
+  INFO  frontend/best_eta.go:103  Dispatch successful  {"service": "frontend",
+        "trace_id": "ff85bb590c413868cc304494136a3399", "span_id": "13df3b88240783d8",
+        "driver": "T734673C", "eta": "2m0s"}
+  ```
+  Am Ende jeder Zeile steht ein JSON-Block mit `"trace_id"` und `"span_id"`. Diese IDs nutzt du später für den Sprung vom Log zum Trace.
+]
+
+=== So testest du Tempo ohne Grafana
+
+Tempo hat eine HTTP-API auf Port 3200. Wie bei Loki brauchst du den Header `X-Scope-OrgID`. Leite den Port in einem zweiten Terminal um:
+
+#cmd("Mac")[```bash
+kubectl --context obs -n monitoring port-forward svc/tempo 3200:3200
+```][Lass das Terminal offen.]
+
+#cmd("Mac")[```bash
+curl -s -G -H "X-Scope-OrgID: app1" localhost:3200/api/search \
+  --data-urlencode 'q={ resource.service.name = "frontend" }' \
+  --data-urlencode limit=3 | jq -c '.traces[] | [.rootServiceName, .rootTraceName, .durationMs]'
+```][Sucht mit TraceQL nach drei Traces des Dienstes `frontend`. `-G` hängt die Parameter an die URL, `--data-urlencode` maskiert die Sonderzeichen.]
+
+#pruefe[
+  Etwa eine Minute nach dem Start von HotROD drei Zeilen wie `["frontend","GET /dispatch",759]`: Dienst, Name des Wurzel-Spans und Dauer in Millisekunden. Bleibt die Liste leer, ist die Kette vor Tempo unterbrochen. Prüfe die Alloy-Logs auf `401` oder `x509`.
 ]
 
 #aufgabe[
@@ -254,14 +286,16 @@ kubectl --context app1 -n demo logs deploy/hotrod --tail=5
 kubectl --context obs apply -f observability/grafana/datasources/tempo.yaml
 ```][Der Sidecar lädt die Datenquelle nach.]
 
-Öffne *Explore*, wähle *Tempo*, stelle den Abfragetyp auf *TraceQL* und gib ein:
+Öffne *Explore*, wähle *Tempo*, stelle *Query type* auf *TraceQL* und gib ein:
 
 ```traceql
 { resource.cluster = "app1" && resource.service.name = "frontend" }
 ```
 
+#bild("bilder/09-tempo-suche.png", [*Explore* mit Tempo: *Query type* steht auf *TraceQL*. Jede Zeile ist ein Trace, ein Klick auf die Trace-ID öffnet ihn.])
+
 #pruefe[
-  Eine Liste von Traces, deren Wurzel-Span `/dispatch` heißt, etwa alle drei Sekunden einer. Ein Klick öffnet den Wasserfall. Ganz oben steht `frontend`, darunter `customer` mit dem langen MySQL-Span, dann `driver` mit vielen kurzen Redis-Spans und mehrere parallele `route`-Aufrufe. Unter *Resource attributes* eines Spans stehen `cluster`, `k8s.namespace.name` und `k8s.pod.name`.
+  Eine Liste von Traces, deren Wurzel-Span `GET /dispatch` heißt, etwa alle drei Sekunden einer. Dazwischen stehen kurze Traces `GET /`, die Abfragen der Startseite. Ein Klick öffnet den Wasserfall: Ganz oben steht `frontend`, darunter `customer` mit dem MySQL-Span von rund 300 ms, dann `driver` mit vielen kurzen Redis-Spans und mehrere parallele `route`-Aufrufe. Unter *Resource attributes* eines Spans stehen `cluster`, `k8s.namespace.name` und `k8s.pod.name`.
 ]
 
 #falle[
@@ -321,13 +355,15 @@ sum by (cluster, service) (rate(traces_spanmetrics_calls_total[5m]))
 ```
 
 #pruefe[
-  Je eine Serie für `frontend`, `customer`, `driver`, `route` und `redis-manual`, alle mit `cluster="app1"` und zusätzlich `tenant_id="obs"`. Kommen keine Serien an, prüfe das Tempo-Log auf Fehler beim Schreiben an Thanos Receive.
+  Je eine Serie für `frontend`, `customer`, `driver`, `route`, `mysql` und `redis-manual`, alle mit `cluster="app1"` und zusätzlich `tenant_id="obs"`. Kommen keine Serien an, prüfe das Tempo-Log auf Fehler beim Schreiben an Thanos Receive.
 ]
 
 Wechsle zurück zur Datenquelle *Tempo* und wähle den Abfragetyp *Service Graph*.
 
+#bild("bilder/09-tempo-service-graph.png", [Der Service-Graph: `user` ruft `frontend`, das ruft `route`, `driver` und `customer`. Jeder Knoten zeigt mittlere Dauer und Anfragen pro Sekunde. Der rote Anteil am Ring unten ist die Fehlerquote von Redis.], breite: 75%)
+
 #pruefe[
-  Ein Graph mit den Diensten als Knoten und Pfeilen von `frontend` zu `customer`, `driver` und `route`. Ein Klick auf einen Knoten zeigt Anfragerate, Fehlerrate und Dauer. Datenbanken wie MySQL erscheinen je nach Attributen als eigener Knoten oder gar nicht.
+  Ein Graph mit den Diensten als Knoten und Pfeilen von `frontend` zu `customer`, `driver` und `route`. Über dem Graphen steht eine Tabelle mit Rate und Dauer je Operation. `mysql` und `redis-manual` erscheinen als eigene Knoten, aber nicht immer mit Pfeil, weil HotROD diese Aufrufe nur simuliert.
 ]
 
 == Von der Metrik zum Trace: Exemplars
@@ -342,6 +378,8 @@ histogram_quantile(0.95, sum by (le, service) (
 
 Schalte unter der Abfrage den Schalter *Exemplars* ein.
 
+#bild("bilder/09-exemplars.png", [Das 95. Perzentil je Dienst. Die blassen Rauten sind Exemplars, jede steht für eine echte Anfrage mit Trace-ID.])
+
 #pruefe[
   Im Diagramm erscheinen kleine Rauten über den Linien. Fährst du mit der Maus darüber, zeigt Grafana die `traceID` und einen Knopf, der den Trace in Tempo öffnet. So kommst du von „das 95. Perzentil steigt“ direkt zu einer Anfrage, die langsam war.
 ]
@@ -354,9 +392,15 @@ Die Datenquelle Loki aus Kapitel 8 erkennt `trace_id` im Log-Text. HotROD schrei
 {cluster="app1", namespace="demo"} |= "redis timeout"
 ```
 
-Klappe eine Zeile auf. Unter *Links* steht *Trace in Tempo öffnen*. Ein Klick öffnet den Trace in einer geteilten Ansicht neben den Logs. Dort findest du den fehlerhaften Redis-Span rot markiert.
+Klicke auf eine Zeile. Darunter öffnen sich die Details. Unter *Links* steht *Trace in Tempo öffnen*:
 
-Der Weg zurück: Klicke im Trace auf einen Span von `driver` und dann auf das Log-Symbol. Grafana baut daraus eine Loki-Abfrage mit `cluster`, `namespace` und `pod` und filtert auf die Trace-ID.
+#bild("bilder/09-log-zu-trace.png", [Die aufgeklappte Log-Zeile. Den Link *Trace in Tempo öffnen* erzeugt das Feld `derivedFields` der Loki-Datenquelle aus der `trace_id` im Text.])
+
+Ein Klick öffnet den Trace in einer geteilten Ansicht neben den Logs. Dort findest du den fehlerhaften Redis-Span rot markiert:
+
+#bild("bilder/09-log-und-trace-geteilt.png", [Links die Logs, rechts der Trace derselben Anfrage. Oben rot der Fehler-Span `GetDriver` von `redis-manual`, darunter der Wasserfall mit dem MySQL-Span von 300 ms. *Logs for this trace* oben rechts führt den umgekehrten Weg.])
+
+Der Weg zurück: Klicke im Trace oben rechts auf *Logs for this trace* oder bei einem Span von `driver` auf das Log-Symbol. Grafana baut daraus eine Loki-Abfrage mit `cluster`, `namespace` und `pod` und filtert auf die Trace-ID.
 
 #pruefe[
   Im rechten Bereich erscheinen genau die Log-Zeilen dieser einen Anfrage, nicht alle Logs des Pods. Erscheint die Meldung, dass Labels fehlen, fehlen dem Span die Attribute aus `k8sattributes`. Prüfe dann die Reihenfolge in `traces.alloy`.
