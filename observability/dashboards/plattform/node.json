@@ -1011,7 +1011,11 @@
         "label": "Datenquelle",
         "type": "datasource",
         "query": "prometheus",
-        "current": {},
+        "current": {
+          "selected": true,
+          "text": "default",
+          "value": "default"
+        },
         "hide": 0,
         "includeAll": false,
         "multi": false,

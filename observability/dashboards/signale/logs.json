@@ -338,7 +338,11 @@
         "label": "Datenquelle",
         "type": "datasource",
         "query": "loki",
-        "current": {},
+        "current": {
+          "selected": true,
+          "text": "default",
+          "value": "default"
+        },
         "hide": 0,
         "includeAll": false,
         "multi": false,
@@ -370,7 +374,7 @@
         "includeAll": true,
         "current": {},
         "options": [],
-        "allValue": ".*"
+        "allValue": ".+"
       },
       {
         "name": "namespace",
@@ -396,7 +400,7 @@
         "includeAll": true,
         "current": {},
         "options": [],
-        "allValue": ".*"
+        "allValue": ".+"
       },
       {
         "name": "suche",

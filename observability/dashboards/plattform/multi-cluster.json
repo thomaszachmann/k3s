@@ -278,7 +278,7 @@
             "uid": "${datasource}"
           },
           "refId": "A",
-          "expr": "max(time() - max by (cluster) (timestamp(up{cluster=~\"$cluster\"})))",
+          "expr": "max(time() - max by (cluster) (max_over_time(timestamp(up{cluster=~\"$cluster\"})[6h:1m])))",
           "editorMode": "code",
           "legendFormat": "__auto",
           "range": false,
@@ -528,7 +528,7 @@
             "uid": "${datasource}"
           },
           "refId": "E",
-          "expr": "time() - max by (cluster) (timestamp(up{cluster=~\"$cluster\"}))",
+          "expr": "time() - max by (cluster) (max_over_time(timestamp(up{cluster=~\"$cluster\"})[6h:1m]))",
           "editorMode": "code",
           "legendFormat": "__auto",
           "range": false,
@@ -594,6 +594,12 @@
                     }
                   ]
                 }
+              },
+              {
+                "id": "color",
+                "value": {
+                  "mode": "thresholds"
+                }
               }
             ]
           },
@@ -631,6 +637,12 @@
                       "value": 300
                     }
                   ]
+                }
+              },
+              {
+                "id": "color",
+                "value": {
+                  "mode": "thresholds"
                 }
               }
             ]
@@ -1025,7 +1037,11 @@
         "label": "Datenquelle",
         "type": "datasource",
         "query": "prometheus",
-        "current": {},
+        "current": {
+          "selected": true,
+          "text": "default",
+          "value": "default"
+        },
         "hide": 0,
         "includeAll": false,
         "multi": false,

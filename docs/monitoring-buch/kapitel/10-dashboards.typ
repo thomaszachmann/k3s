@@ -39,14 +39,15 @@ Jedes Dashboard beginnt mit denselben zwei Variablen:
 #datei("observability/dashboards/plattform/multi-cluster.json (Ausschnitt)", ```json
 "templating": { "list": [
   { "name": "datasource", "label": "Datenquelle",
-    "type": "datasource", "query": "prometheus", "current": {} },
+    "type": "datasource", "query": "prometheus",
+    "current": { "text": "default", "value": "default" } },
   { "name": "cluster", "label": "Cluster", "type": "query",
     "datasource": { "type": "prometheus", "uid": "${datasource}" },
     "query": "label_values(up, cluster)",
     "refresh": 2, "multi": true, "includeAll": true, "allValue": ".*" }
 ]}
 ```, erklaerung: [
-  Eine Variable vom Typ `datasource` listet alle Datenquellen des Typs `prometheus`. Mit `"current": {}` wählt Grafana die Standard-Datenquelle, bei dir Thanos. `refresh: 2` liest die Cluster bei jeder Änderung des Zeitraums neu. Kommt ein vierter Cluster dazu, erscheint er von selbst.
+  Eine Variable vom Typ `datasource` listet alle Datenquellen des Typs `prometheus`. Der Wert `default` steht für die Standard-Datenquelle, bei dir Thanos. Das ist keine feste UID: In einer anderen Grafana-Instanz wählt dasselbe Dashboard deren Standard. `refresh: 2` liest die Cluster bei jeder Änderung des Zeitraums neu. Kommt ein vierter Cluster dazu, erscheint er von selbst.
 ])
 
 Jedes Panel verweist dann auf die Variable statt auf eine feste Datenquelle:
@@ -58,6 +59,10 @@ Jedes Panel verweist dann auf die Variable statt auf eine feste Datenquelle:
 ```
 
 Das `=~` ist wichtig. Bei Mehrfachauswahl setzt Grafana für `$cluster` einen regulären Ausdruck wie `app1|app2` ein, bei *All* den Wert aus `allValue`, also `.*`. Mit `=` statt `=~` fände die Abfrage dann nichts.
+
+#falle[
+  Lässt du `current` leer, also `"current": {}`, wählt Grafana 13 nicht zuverlässig die Standard-Datenquelle. Im Labor landete das Dashboard bei `Prometheus`, dem lokalen Prometheus auf obs. Seine Serien tragen kein Label `cluster`, denn das hängt erst der Remote Write an. Das Dashboard öffnet dann mit leerer Cluster-Auswahl und lauter leeren Panels.
+]
 
 #falle[
   Ein Stat-Panel mit `count(...)` zeigt *No data* statt `0`, wenn nichts passt, denn `count` über eine leere Menge ist leer und nicht null. Deshalb enden solche Abfragen mit `or vector(0)`. Ohne das sieht „keine Alarme“ genauso aus wie „Abfrage kaputt“.
@@ -103,7 +108,7 @@ kubectl --context obs -n monitoring logs deploy/kps-grafana \
 ```][Der Dashboard-Sidecar meldet jede Datei, die er schreibt.]
 
 #pruefe[
-  Sieben Zeilen, in denen der Sidecar die Dateien unter `/tmp/dashboards/Plattform/` und `/tmp/dashboards/Signale/` ablegt. In Grafana stehen unter *Dashboards* die Ordner *Kubernetes*, *Plattform* und *Signale*.
+  Sieben Zeilen, in denen der Sidecar die Dateien unter `/tmp/dashboards/Plattform/` und `/tmp/dashboards/Signale/` ablegt. In Grafana stehen unter *Dashboards* die Ordner *Kubernetes*, *Plattform* und *Signale*. Jedes Dashboard öffnet mit `default` als Datenquelle und einer gefüllten Auswahl *Cluster*.
 ]
 
 == Die Dashboards im Einzelnen
@@ -112,8 +117,17 @@ kubectl --context obs -n monitoring logs deploy/kps-grafana \
 
 Dein Einstieg jeden Morgen. Oben sechs Kennzahlen: wie viele Cluster Daten liefern, welcher Anteil der Targets erreichbar ist, wie viele Alarme feuern, das älteste Datenalter, Nodes und laufende Pods. Darunter eine Tabelle mit einer Zeile pro Cluster, deren Zellen rot werden, wenn etwas nicht stimmt. Im unteren Teil CPU und Speicher je Cluster sowie Proben pro Sekunde und aktive Serien je Mandant in Thanos Receive.
 
+#bild("bilder/10-dashboard-multi-cluster.png", [Der Multi-Cluster-Überblick im Normalbetrieb: drei Cluster, alle Targets erreichbar, das Datenalter überall grün. Wie dasselbe Dashboard während eines Ausfalls aussieht, zeigt Kapitel 15.])
+
 #warum[
-  Das Panel *Ältester Datenpunkt* rechnet `time() - timestamp(up)` je Cluster. Es zeigt dasselbe wie der Alarm `ClusterSchweigt` aus Kapitel 7, aber sofort und ohne `for`-Zeit. Ein Wert über zwei Minuten heißt: Dieser Cluster schickt gerade nichts.
+  Das Panel *Ältester Datenpunkt* rechnet für jeden Cluster, wie lange sein letzter `up`-Wert her ist. Es zeigt dasselbe wie der Alarm `ClusterSchweigt` aus Kapitel 7, aber sofort und ohne `for`-Zeit. Ein Wert über zwei Minuten heißt: Dieser Cluster schickt gerade nichts.
+
+  Die Abfrage braucht dafür einen Trick. Ein einfaches `time() - timestamp(up)` findet nur Serien, die in den letzten fünf Minuten einen Wert hatten. Ein schweigender Cluster verschwindet damit nach fünf Minuten aus der Tabelle, statt rot zu werden. Deshalb schaut die Abfrage mit einer Unterabfrage sechs Stunden zurück:
+  ```promql
+  time() - max by (cluster) (
+    max_over_time(timestamp(up{cluster=~"$cluster"})[6h:1m]))
+  ```
+  `[6h:1m]` wertet `timestamp(up)` sechs Stunden lang einmal pro Minute aus, `max_over_time` nimmt davon den jüngsten Zeitpunkt. Weil die Unterabfrage nur minütlich rechnet, zeigt auch ein gesunder Cluster bis zu gut einer Minute an. Das ist der Grund für die Schwelle von zwei Minuten.
 ]
 
 === Node
@@ -123,6 +137,8 @@ Wähle Cluster und Node. Die obere Reihe zeigt Laufzeit, Kerne, Arbeitsspeicher 
 === Workloads
 
 Wähle einen Cluster und einen oder mehrere Namespaces. Oben laufende und gestörte Pods, nicht bereite Container und Neustarts der letzten Stunde. Die Tabelle *Anforderung und Verbrauch je Pod* stellt CPU und RAM den Requests und Limits gegenüber. Liegt der Verbrauch weit unter dem Request, verschenkst du Platz. Liegt er nah am Limit, droht `OOMKilled`. Unten drei Tabellen für die Fehlersuche: Neustarts, wartende Container mit Grund (etwa `CrashLoopBackOff` oder `ImagePullBackOff`) und Deployments mit gewünschten und verfügbaren Replikas.
+
+#bild("bilder/10-dashboard-workloads.png", [*Workloads* für `app1` und den Namespace `demo`: oben der Zustand, darunter CPU und Speicher je Pod, unten der Vergleich mit den Requests.])
 
 === Thanos-Speicher
 
@@ -136,6 +152,12 @@ Oben die Zahl kritischer, warnender und wartender Alarme, aktive Silences, der W
 
 Nutzt die Datenquelle Loki aus Kapitel 8. Die Variablen `cluster` und `namespace` liest das Dashboard aus den Labels in Loki, dazu kommt ein Suchfeld für einen regulären Ausdruck. Du siehst die Log-Zeilen je Namespace als Balken, Zeilen mit `error`, `fatal` oder `panic` je Cluster, die zehn gesprächigsten Pods und darunter die Log-Zeilen selbst.
 
+#bild("bilder/10-dashboard-logs.png", [Das Dashboard *Logs* über alle Cluster: Zeilen je Namespace, Fehlerzeilen je Cluster, die gesprächigsten Pods und darunter die Zeilen selbst.])
+
+#falle[
+  *Loki mag kein `.*`.* Bei der Auswahl *All* setzt Grafana den Wert aus `allValue` ein. Für Prometheus ist `.*` richtig, für Loki nicht: Loki verlangt in jedem Selektor mindestens einen Matcher, der keine leeren Werte zulässt, und antwortet sonst mit `queries require at least one regexp or equality matcher that does not have an empty-compatible value`. Alle Panels zeigen dann ein rotes Warndreieck. Im Logs-Dashboard steht deshalb `"allValue": ".+"`.
+]
+
 #falle[
   Loki trennt die Cluster als Mandanten. Damit das Dashboard alle drei auf einmal zeigt, muss die Loki-Datenquelle aus Kapitel 8 den Header `X-Scope-OrgID: obs|app1|app2` senden, und in Loki müssen Abfragen über mehrere Mandanten erlaubt sein. Sonst zeigt die Auswahl `cluster` nur einen Wert.
 ]
@@ -143,6 +165,8 @@ Nutzt die Datenquelle Loki aus Kapitel 8. Die Variablen `cluster` und `namespace
 === Services
 
 Die RED-Methode für jeden Service: *Rate*, *Errors*, *Duration*. Die Daten kommen nicht aus der Anwendung, sondern aus Tempos Metrics-Generator (Kapitel 9). Er macht aus jeder Span die Serien `traces_spanmetrics_calls_total` und `traces_spanmetrics_latency_bucket`, und aus Aufrufen zwischen Services die Serien `traces_service_graph_request_total`. Du siehst Anfragen pro Sekunde, Fehlerquote und Latenz p95 je Service, eine Tabelle der Endpunkte und eine Tabelle „Wer ruft wen?“. Die Punkte im Latenz-Panel sind Exemplars: Ein Klick öffnet den passenden Trace in Tempo.
+
+#bild("bilder/10-dashboard-services.png", [*Services* für `app1`. Die Kurven beginnen erst um 14 Uhr, davor lag der Ausfalltest aus Kapitel 15, in dem keine Traces ankamen. *Fehlerquote* zeigt *No data*: Die Redis-Fehler von HotROD hängen an Client-Spans, das Panel zählt nur Spans vom Typ Server, und die waren fehlerfrei. Die Rauten im Latenz-Panel sind Exemplars.])
 
 #falle[
   Der Metrics-Generator schreibt alle Span-Metriken als Mandant `obs`, egal aus welchem Cluster die Spans stammen. `tenant_id` hilft hier also nicht weiter. Die Abfragen filtern deshalb auf das Label `cluster`, das Tempo aus dem Ressourcen-Attribut `cluster` als Dimension übernimmt (Kapitel 9). Fehlt diese Dimension, bleibt das Dashboard leer, sobald du einen Cluster auswählst.

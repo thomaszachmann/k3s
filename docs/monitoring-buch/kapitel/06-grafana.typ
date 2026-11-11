@@ -254,9 +254,12 @@ Die leeren Panels sind kein Fehler deines Aufbaus. Sie nutzen Aufnahmeregeln, di
 Du willst ein Dashboard anpassen? Der Weg ist immer derselbe:
 
 + In Grafana das Dashboard öffnen, *Edit* wählen und so lange ändern, bis es passt.
-+ Speichern geht nicht. Wähle stattdessen *Export → Export as JSON* und kopiere das JSON.
++ Speichern geht nicht. Wähle stattdessen oben rechts *Export → Export as code*.
++ Klappe *Advanced options* auf und stelle *Model* auf *Classic*. Grafana 13 bietet sonst das neue Format `V2 Resource` an, das nicht zu den Dateien im Repo passt. Lass *Export for sharing externally* aus und klicke *Download file* oder *Copy to clipboard*.
 + Ersetze die Datei unter `observability/dashboards/` und prüfe sie mit `jq empty`.
 + Mit `git diff` die Änderung ansehen, mit `kubectl apply -k` ausrollen, committen.
+
+#bild("bilder/06-grafana-export-json.png", [*Export as code* mit aufgeklappten *Advanced options*: *Classic* ist gewählt, der Schalter für das Teilen bleibt aus. Den Hinweis zum V2-Schema kannst du für die Dashboards dieses Buches ignorieren, sie nutzen weder Tabs noch bedingtes Anzeigen.], breite: 70%)
 
 #falle[
   Schalte beim Export *Export for sharing externally* nicht ein. Diese Variante ersetzt die Datenquellen durch Platzhalter wie `${DS_THANOS}` und legt einen Block `__inputs` an. Den füllt nur der Import-Dialog aus, der Sidecar nicht. Das Dashboard zeigt dann überall „Datasource not found“. Die eigenen Dashboards nutzen stattdessen eine Variable `datasource`, die beim Laden die Standard-Datenquelle wählt.

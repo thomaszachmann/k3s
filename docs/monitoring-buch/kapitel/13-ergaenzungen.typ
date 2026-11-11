@@ -120,29 +120,18 @@ Ein Monitoring, das ausfällt, meldet nichts. Das sieht genauso aus wie ein gesu
 #tabelle(
   (auto, 1fr),
   ([Teilausfall], [Woran du ihn erkennst]),
-  [Ein App-Cluster schickt nichts mehr], [Seine Serien verschwinden aus Thanos. Alarm `ClusterSchweigt`],
-  [Receive lehnt Daten ab], [`http_requests_total{handler="receive"}` mit Code 4xx oder 5xx],
-  [Compactor hat aufgegeben], [`thanos_compact_halted == 1`],
+  [Ein App-Cluster schickt nichts mehr], [Alarm `ClusterSchweigt` aus Kapitel 7, Panel *Ältester Datenpunkt* im Multi-Cluster-Dashboard],
+  [Receive lehnt Daten ab], [Alarme `ReceiveFehler` und `ReceiveLehntAb` aus Kapitel 7],
+  [Receive kann nicht nach S3 hochladen], [Alarm `ReceiveUploadFehler` aus Kapitel 7],
+  [Compactor hat aufgegeben], [Alarm `CompactorAngehalten` aus Kapitel 7, Grundlage ist `thanos_compact_halted == 1`],
   [etcd auf `obs` ist krank], [Standardregeln des Charts, etwa `etcdNoLeader`. Die Daten kommen über Port 2381, den die k3s-Config mit `etcd-expose-metrics` öffnet],
-  [Alloy verliert Daten], [Logs von Alloy, siehe Kapitel 14],
+  [Ein Eingang ist von außen nicht erreichbar], [Alarm `EndpunktNichtErreichbar` aus dem vorigen Abschnitt],
+  [Alloy verliert Daten], [Logs von Alloy, siehe Kapitel 14, und die Zähler für verworfene Daten aus Kapitel 15],
 )
 
-#datei("observability/extras/meta-rules.yaml (Ausschnitt)")[```yaml
-- alert: ClusterSchweigt
-  expr: |
-    group by (cluster) (up offset 1h)
-      unless
-    group by (cluster) (up)
-  for: 10m
-```, erklaerung: [Lies die Abfrage so: alle Cluster, die vor einer Stunde Daten hatten, abzüglich der Cluster, die jetzt Daten haben. Übrig bleibt der Cluster, der verstummt ist. Das funktioniert für jeden neuen Cluster automatisch, ohne dass du ihn in die Regel schreibst.]]
+Die Regeln für die meisten Teilausfälle hast du also schon. Sie liegen in `observability/rules/` und laufen im Thanos Ruler, denn nur er sieht alle Cluster. Lege sie nicht ein zweites Mal an: Zwei Regeln mit demselben Namen und derselben Bedingung lösen jeden Alarm doppelt aus.
 
-#cmd("Mac")[```bash
-kubectl --context obs apply -f observability/extras/meta-rules.yaml
-```][Drei Regeln mit `auswertung: global` für den Thanos Ruler, denn nur er sieht alle Cluster.]
-
-#aufgabe[
-  Simuliere den Ausfall: `kubectl --context app2 -n monitoring scale ds/alloy --replicas=0` geht bei einem DaemonSet nicht. Finde einen anderen Weg, Alloy in `app2` für 15 Minuten anzuhalten, und warte auf `ClusterSchweigt`. Hinweis: Ein DaemonSet lässt sich über einen `nodeSelector` auf ein Label beschränken, das kein Node trägt.
-]
+Wie gut die Kette im Ernstfall greift, zeigt der Ausfalltest in Kapitel 15: Dort ist obs zwei Stunden lang für die App-Cluster unerreichbar, und du siehst, welcher Alarm wann feuert und was dabei verloren geht.
 
 Alloy kann auch über sich selbst berichten, mit der Komponente `prometheus.exporter.self`. Dann siehst du etwa, wie viele Samples Alloy nicht loswird. In diesem Buch fehlt das bewusst, um `metrics.alloy` kurz zu halten. Es ist eine gute nächste Übung.
 
@@ -173,7 +162,11 @@ sum by (tenant) (prometheus_tsdb_head_series{job="thanos-receive"})
 ```
 
 #pruefe[
-  Drei Mandanten `obs`, `app1` und `app2` mit jeweils einigen zehntausend Serien. Ganz oben in der `topk`-Liste stehen typischerweise Metriken von cAdvisor und kube-state-metrics. Die genauen Zahlen hängen von deinem Cluster ab.
+  Im Labor sahen die Serien je Mandant so aus:
+  ```
+  ["app1","55441"]   ["app2","54581"]   ["obs","139825"]   ["unbekannt","0"]
+  ```
+  `obs` hat mehr als doppelt so viele Serien wie ein App-Cluster, denn dort sammelt Prometheus auch die Metriken von Thanos, Loki, Tempo und Grafana ein. Ganz oben in der `topk`-Liste standen Histogramme des API-Servers, allen voran `apiserver_request_duration_seconds_bucket` mit über 17000 Serien. Ein Histogramm erzeugt eine Serie pro Grenze `le`, pro Ressource und pro Verb, das summiert sich schnell. Die genauen Zahlen hängen von deinem Cluster ab.
 ]
 
 Gegen einen Ausreißer hilft ein Limit pro Mandant. Thanos Receive liest es aus einer Datei.
@@ -287,7 +280,7 @@ Brauchen die Cluster unterschiedliche Fristen, kann Loki das pro Mandant. Im Cha
 
 == Ausblick: GitOps
 
-Du hast in diesem Buch jede Änderung mit `kubectl apply` und `helm upgrade` vom Mac aus ausgerollt. Das ist zum Lernen richtig, denn du siehst jeden Schritt. Im Alltag wird es mühsam: Hat jemand etwas von Hand geändert? Ist `app2` auf demselben Stand wie `app1`? Werkzeuge wie Flux oder Argo CD drehen den Weg um. Sie laufen in jedem Cluster, lesen dieses Repo und gleichen den Cluster laufend mit dem Stand im Git ab. Weicht etwas ab, setzen sie es zurück. Deine Ordnerstruktur unter `observability/` ist dafür schon gut vorbereitet, denn alles liegt als Datei vor. Offen bleiben die Secrets, die du bewusst nie ins Git geschrieben hast. Dafür brauchst du dann ein Werkzeug wie External Secrets oder SOPS.
+Du hast in diesem Buch jede Änderung mit `kubectl apply` und `helm upgrade` vom Mac aus ausgerollt. Das ist zum Lernen richtig, denn du siehst jeden Schritt. Im Alltag wird es mühsam: Hat jemand etwas von Hand geändert? Ist `app2` auf demselben Stand wie `app1`? Werkzeuge wie Flux oder Argo CD drehen den Weg um. Sie laufen in jedem Cluster, lesen dieses Repo und gleichen den Cluster laufend mit dem Stand im Git ab. Weicht etwas ab, setzen sie es zurück. Deine Ordnerstruktur unter `observability/` ist dafür schon gut vorbereitet, denn alles liegt als Datei vor. Offen bleiben die Secrets, die du bewusst nie ins Git geschrieben hast. Dafür brauchst du dann ein Werkzeug wie External Secrets oder SOPS. Wie GitOps mit Argo CD für eine Plattform mit vielen Kunden und Clustern aussieht, inklusive Onboarding neuer Cluster, zeigt Kapitel 16.
 
 #gelernt(
   [Der Blackbox-Exporter prüft den Weg eines Nutzers von außen, inklusive Zertifikatsablauf.],
