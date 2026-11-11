@@ -43,27 +43,19 @@ Die Datei `observability/backup/s3-ingress.yaml` ist gebaut wie die Ingresse aus
 kubectl --context obs apply -f observability/backup/s3-ingress.yaml
 ```][Legt den Ingress auf `obs` an.]
 
-In den Clustern löst CoreDNS die Zone `obs.internal` schon auf. Die Datei `observability/k3s/coredns-custom.yaml` enthält dafür jetzt eine zusätzliche Zeile `172.16.0.126 s3.obs.internal`.
+In den Pods der Cluster löst CoreDNS den Namen `s3.obs.internal` schon auf, und dein Mac kennt ihn ebenfalls. Beides hast du in Kapitel 2 eingetragen.
+
+k3s selbst läuft aber nicht im Cluster, sondern als Dienst auf der VM. Für die etcd-Snapshots fragt es den Resolver des Betriebssystems und nicht CoreDNS. Jede VM braucht deshalb einen eigenen Eintrag in `/etc/hosts`:
 
 #cmd("Mac")[```bash
-for c in obs app1 app2; do
-  kubectl --context $c apply -f observability/k3s/coredns-custom.yaml
-done
-```][Verteilt die ergänzte Hosts-Liste. CoreDNS lädt sie nach etwa einer Minute von selbst.]
-
-k3s selbst läuft aber nicht im Cluster, sondern als Dienst auf der VM. Für die etcd-Snapshots fragt es den Resolver des Betriebssystems und nicht CoreDNS. Jede VM braucht deshalb einen Eintrag in `/etc/hosts`. Dein Mac auch, denn die Velero-CLI lädt Protokolle direkt aus S3.
+ssh -t <user>@172.16.0.126 'echo "172.16.0.126 s3.obs.internal" | sudo tee -a /etc/hosts'
+ssh -t <user>@172.16.0.228 'echo "172.16.0.126 s3.obs.internal" | sudo tee -a /etc/hosts'
+ssh -t <user>@172.16.0.83  'echo "172.16.0.126 s3.obs.internal" | sudo tee -a /etc/hosts'
+```][Ergänzt den Eintrag auf allen drei VMs. Alle zeigen auf die IP von obs. `-t` braucht `sudo` für die Passwortabfrage.]
 
 #cmd("Mac")[```bash
-for ip in 150 151 152; do
-  ssh -t <user>@172.16.0.$ip \
-    'echo "172.16.0.126 s3.obs.internal" | sudo tee -a /etc/hosts'
-done
-```][Ergänzt den Eintrag auf allen drei VMs. `-t` braucht `sudo` für die Passwortabfrage.]
-
-#cmd("Mac")[```bash
-echo "172.16.0.126 s3.obs.internal" | sudo tee -a /etc/hosts
 curl -s --cacert observability/tls/ca.crt https://s3.obs.internal/ | head -c 200
-```][Derselbe Eintrag auf dem Mac, danach eine Anfrage ohne Signatur, über TLS mit deiner CA.]
+```][Eine Anfrage ohne Signatur vom Mac, über TLS mit deiner CA.]
 
 #pruefe[
   Eine kurze XML-Antwort von SeaweedFS, typischerweise mit `AccessDenied`. Das ist der Erfolg: TLS, Traefik und der Service funktionieren. Ein `404 page not found` in Klartext kommt von Traefik und heißt, dass der Ingress nicht greift. Ein Zertifikatsfehler heißt, dass `curl` die CA nicht bekommen hat.
@@ -74,6 +66,10 @@ curl -s --cacert observability/tls/ca.crt https://s3.obs.internal/ | head -c 200
 ]
 
 == etcd-Snapshots nach S3
+
+#hinweis("Nicht im Labor durchgespielt", warn, warn-hell)[
+  Die Schritte dieses und des nächsten Abschnitts laufen per SSH direkt auf den VMs. Sie wurden beim Testlauf dieses Buches nicht ausgeführt, nur gegen die k3s-Doku geprüft. Der Velero-Teil weiter unten lief dagegen vollständig im Labor.
+]
 
 k3s macht schon von sich aus alle zwölf Stunden einen Snapshot, aber nur lokal auf der VM. Stirbt die Disk, ist er mit weg. Du stellst auf alle sechs Stunden um und lässt k3s jede Kopie zusätzlich nach S3 schieben.
 
@@ -88,18 +84,34 @@ echo "${#AK} ${#SK}"
 ```][Liest die Schlüssel in Shell-Variablen und gibt nur ihre Längen aus. Laut Kapitel 3 sind das `32 64`.]
 
 #cmd("Mac")[```bash
-for c in obs app1 app2; do
-  kubectl --context $c -n kube-system create secret generic k3s-etcd-s3 \
-    --type=etcd.k3s.cattle.io/s3-config-secret \
-    --from-literal=etcd-s3-endpoint=s3.obs.internal \
-    --from-literal=etcd-s3-bucket=backup \
-    --from-literal=etcd-s3-folder=etcd/$c \
-    --from-file=etcd-s3-endpoint-ca=observability/tls/ca.crt \
-    --from-file=etcd-s3-access-key=<(printf %s "$AK") \
-    --from-file=etcd-s3-secret-key=<(printf %s "$SK") \
-    --dry-run=client -o yaml | kubectl --context $c apply -f -
-done
-```][Ein Secret pro Cluster, mit eigenem Ordner. Der Typ `etcd.k3s.cattle.io/s3-config-secret` ist Pflicht. Die CA steht direkt als PEM im Secret. Die beiden Schlüssel kommen über `<(printf ...)` als Datei, damit sie nicht in der Prozessliste auftauchen. Region und Adressierung bleiben auf den Standardwerten `us-east-1` und `auto`, und `auto` wählt für fremde Endpunkte den Pfad-Stil.]
+kubectl --context obs -n kube-system create secret generic k3s-etcd-s3 \
+  --type=etcd.k3s.cattle.io/s3-config-secret \
+  --from-literal=etcd-s3-endpoint=s3.obs.internal \
+  --from-literal=etcd-s3-bucket=backup \
+  --from-literal=etcd-s3-folder=etcd/obs \
+  --from-file=etcd-s3-endpoint-ca=observability/tls/ca.crt \
+  --from-file=etcd-s3-access-key=<(printf %s "$AK") \
+  --from-file=etcd-s3-secret-key=<(printf %s "$SK")
+```][Das Secret für obs, mit dem Ordner `etcd/obs`.]
+
+#cmd("Mac")[```bash
+kubectl --context app1 -n kube-system create secret generic k3s-etcd-s3 \
+  --type=etcd.k3s.cattle.io/s3-config-secret \
+  --from-literal=etcd-s3-endpoint=s3.obs.internal \
+  --from-literal=etcd-s3-bucket=backup \
+  --from-literal=etcd-s3-folder=etcd/app1 \
+  --from-file=etcd-s3-endpoint-ca=observability/tls/ca.crt \
+  --from-file=etcd-s3-access-key=<(printf %s "$AK") \
+  --from-file=etcd-s3-secret-key=<(printf %s "$SK")
+kubectl --context app2 -n kube-system create secret generic k3s-etcd-s3 \
+  --type=etcd.k3s.cattle.io/s3-config-secret \
+  --from-literal=etcd-s3-endpoint=s3.obs.internal \
+  --from-literal=etcd-s3-bucket=backup \
+  --from-literal=etcd-s3-folder=etcd/app2 \
+  --from-file=etcd-s3-endpoint-ca=observability/tls/ca.crt \
+  --from-file=etcd-s3-access-key=<(printf %s "$AK") \
+  --from-file=etcd-s3-secret-key=<(printf %s "$SK")
+```][Dasselbe für app1 und app2. Die drei Befehle unterscheiden sich nur in Kontext und Ordner. Der Typ `etcd.k3s.cattle.io/s3-config-secret` ist Pflicht. Die CA steht direkt als PEM im Secret. Die beiden Schlüssel kommen über `<(printf ...)` als Datei, damit sie nicht in der Prozessliste auftauchen. Region und Adressierung bleiben auf den Standardwerten `us-east-1` und `auto`, und `auto` wählt für fremde Endpunkte den Pfad-Stil.]
 
 #datei("observability/backup/k3s-etcd-s3.yaml")[```yaml
 etcd-snapshot-schedule-cron: "0 */6 * * *"
@@ -116,9 +128,9 @@ etcd-s3-config-secret: k3s-etcd-s3
 k3s liest neben `/etc/rancher/k3s/config.yaml` auch alle Dateien in `/etc/rancher/k3s/config.yaml.d/`. Deine Haupt-Config aus Kapitel 2 bleibt also unverändert.
 
 #cmd("Mac")[```bash
-for ip in 150 151 152; do
-  scp observability/backup/k3s-etcd-s3.yaml <user>@172.16.0.$ip:/tmp/etcd-s3.yaml
-done
+scp observability/backup/k3s-etcd-s3.yaml <user>@172.16.0.126:/tmp/etcd-s3.yaml
+scp observability/backup/k3s-etcd-s3.yaml <user>@172.16.0.228:/tmp/etcd-s3.yaml
+scp observability/backup/k3s-etcd-s3.yaml <user>@172.16.0.83:/tmp/etcd-s3.yaml
 ```][Kopiert das Drop-in auf alle drei VMs.]
 
 #cmd("Mac")[```bash
@@ -253,6 +265,10 @@ velero --kubecontext app1 backup-location get
 ```][Zeigt den Speicherort und seinen Zustand.]
 
 #pruefe[
+  ```
+  NAME      PROVIDER   BUCKET/PREFIX        PHASE       LAST VALIDATED   ACCESS MODE   DEFAULT
+  default   aws        backup/velero/app1   Available   ...              ReadWrite     true
+  ```
   Eine Zeile `default` mit Provider `aws`, Bucket `backup/velero/app1` und Phase `Available`. Steht dort `Unavailable`, zeigt `kubectl --context app1 -n velero logs deploy/velero | grep -i error` den Grund. Typisch sind ein Zertifikatsfehler (CA-Secret fehlt) oder `AccessDenied` (falsches Secret).
 ]
 
@@ -277,7 +293,7 @@ velero --kubecontext app1 restore create demo-zurueck \
 ```][Holt alle Objekte aus der Sicherung zurück.]
 
 #pruefe[
-  `kubectl --context app1 -n demo get pods` zeigt `hotrod-...` und `hotrod-last-...` stehen nach einer Minute auf `Running`. Nach ein paar weiteren Minuten kommen in Grafana wieder Traces aus `app1` an.
+  `Restore completed with status: Completed.` Danach zeigt `kubectl --context app1 -n demo get pods` die Pods `hotrod-...` und `hotrod-last-...`, im Labor nach gut 30 Sekunden auf `Running`. Die Pods tragen sogar wieder denselben Namen wie vorher, denn Velero stellt die Objekte so wieder her, wie sie gesichert wurden. Nach ein paar weiteren Minuten kommen in Grafana wieder Traces aus `app1` an.
 ]
 
 Velero sichert hier nur Objekte, keine Daten in Volumes. Für die Demo-App reicht das. Für PVCs auf `local-path` bräuchtest du das File System Backup mit `deployNodeAgent: true`.
