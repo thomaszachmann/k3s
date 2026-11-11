@@ -135,7 +135,7 @@ kubectl --context obs -n monitoring get pods
 ```][Zeigt alle Pods im Namespace.]
 
 #pruefe[
-  Neben `s3` laufen unter anderem `prometheus-kps-kube-prometheus-stack-prometheus-0` (2/2), `alertmanager-kps-kube-prometheus-stack-alertmanager-0`, `thanos-ruler-kube-prometheus-stack-thanos-ruler-0`, `kps-grafana-...`, `kps-kube-state-metrics-...` und `kps-prometheus-node-exporter-...`. Alle stehen auf `Running`.
+  Neben `s3` laufen unter anderem `prometheus-kps-kube-prometheus-stack-prometheus-0` (2/2), `alertmanager-kps-kube-prometheus-stack-alertmanager-0`, `thanos-ruler-kps-kube-prometheus-stack-thanos-ruler-0`, `kps-grafana-...`, `kps-kube-state-metrics-...` und `kps-prometheus-node-exporter-...`. Alle stehen auf `Running`.
 ]
 
 Prometheus versucht schon jetzt, an Receive zu schreiben. Den Empfänger gibt es noch nicht.
@@ -147,7 +147,7 @@ kubectl --context obs -n monitoring logs \
 ```][Filtert die Meldungen zum Remote Write heraus.]
 
 #pruefe[
-  Meldungen mit `component=remote` und einem Fehler wie `no such host` für `thanos-receive.monitoring.svc`. Das ist im Moment richtig. Prometheus puffert die Daten in seinem Write-Ahead-Log und schickt sie nach, sobald Receive da ist.
+  Eine Meldung wie `level=WARN ... msg="Failed to send batch, retrying" component=remote ... no such host` für `thanos-receive.monitoring.svc`. Das ist im Moment richtig. Prometheus puffert die Daten in seinem Write-Ahead-Log und schickt sie nach, sobald Receive da ist.
 ]
 
 == Thanos Receive
@@ -200,8 +200,38 @@ kubectl --context obs -n monitoring logs \
 ```][Zeigt den Start von Receive.]
 
 #pruefe[
-  Zeilen mit `level=info`, keine mit `level=error`. Nach spätestens einer Minute schreibt Prometheus, und Receive legt beim ersten Eintreffen von Daten die TSDB für den Mandanten `obs` an. Fehlermeldungen zu S3 wie `Access Denied` bedeuten, dass `thanos-objstore` nicht stimmt.
+  Zeilen mit `level=info`, keine mit `level=error`. Gleich beim Start öffnet Receive eine leere TSDB für den Standard-Mandanten, `tenant=unbekannt msg="opening TSDB"`. Das ist normal. Nach spätestens einer Minute schreibt Prometheus, und es folgt die entscheidende Zeile:
+  ```
+  level=info component=receive component=multi-tsdb tenant=obs msg="TSDB is now ready"
+  ```
+  Fehlermeldungen zu S3 wie `Access Denied` bedeuten, dass `thanos-objstore` nicht stimmt.
 ]
+
+=== So testest du Receive
+
+Receive hat keine eigene Oberfläche. Ob er arbeitet, verraten dir zwei Endpunkte auf seinem HTTP-Port 10902. Leite ihn dafür in einem zweiten Terminal um:
+
+#cmd("Mac")[```bash
+kubectl --context obs -n monitoring port-forward thanos-receive-0 12902:10902
+```][Port 12902 auf dem Mac, damit er nicht mit Thanos Query kollidiert, das später 10902 bekommt.]
+
+#cmd("Mac")[```bash
+curl -s localhost:12902/-/ready; echo
+curl -s localhost:12902/metrics | grep -E '^prometheus_tsdb_head_series\{'
+curl -s localhost:12902/metrics | grep 'handler="receive"'
+```][`/-/ready` ist dieselbe Prüfung, die Kubernetes als Readiness-Probe nutzt. `/metrics` zeigt die Messwerte von Receive selbst: wie viele Serien jeder Mandant gerade im Speicher hat und wie viele Schreibanfragen angekommen sind.]
+
+#pruefe[
+  ```
+  OK
+  prometheus_tsdb_head_series{tenant="obs"} 124765
+  prometheus_tsdb_head_series{tenant="unbekannt"} 0
+  http_requests_total{code="200",handler="receive",method="post",tenant="obs"} 406
+  ```
+  Die Zahlen wachsen mit jedem Aufruf. Steht bei `obs` eine Null oder fehlt die Zeile mit `code="200"`, kommt bei Receive nichts an. Dann zeigen die Logs von Prometheus den Grund. Beende den Port-Forward danach mit `Ctrl-C`.
+]
+
+Damit kannst du Receive für jeden Sender nutzen, der Prometheus Remote Write spricht: Prometheus, Grafana Alloy, das OpenTelemetry Collector, Telegraf oder eigene Programme. Der Sender braucht nur die URL `/api/v1/receive` auf Port 19291 und den Header `THANOS-TENANT`.
 
 == Query, Store und Compact
 
@@ -278,17 +308,30 @@ curl -s http://localhost:10902/api/v1/stores | jq '.data | keys'
 ```][Fragt in einem zweiten Terminal, welche Endpunkte Query kennt.]
 
 #pruefe[
-  Eine Liste mit den Typen `receive`, `rule` und `store`. Fehlt einer, prüfe mit `kubectl logs deploy/thanos-query` die DNS-Auflösung der Endpunkte.
+  ```
+  [
+    "receive",
+    "rule",
+    "store"
+  ]
+  ```
+  Direkt nach dem Start fehlt `store` oft noch für etwa eine halbe Minute, bis Thanos Store den Bucket gelesen hat. Fehlt ein Typ dauerhaft, prüfe mit `kubectl --context obs -n monitoring logs deploy/thanos-query` die DNS-Auflösung der Endpunkte.
 ]
 
-Gib in der Oberfläche diese Abfrage ein:
+Die Seite *Endpoints* im Menü oben zeigt dasselbe wie der `curl`-Befehl, nur ausführlicher: welche Quellen Thanos Query kennt, ob sie erreichbar sind (`UP`) und welche Mandanten sie anbieten.
+
+#bild("bilder/04-query-endpoints.png", [Thanos Query, Seite „Endpoints“: Receive bietet die Mandanten `obs` und `unbekannt` an, dazu kommen Ruler und Store. Store zeigt noch keine Labels, weil in S3 noch kein Block liegt.])
+
+Wechsle zurück auf *Graph*. Klicke in das Eingabefeld, gib diese Abfrage ein und klicke auf *Execute*:
 
 ```promql
 count by (tenant_id, cluster) (up)
 ```
 
+#bild("bilder/04-query-mandanten.png", [Eingabefeld und *Execute* sind rot markiert. Im Reiter *Table* erscheint das Ergebnis als Zahl.])
+
 #pruefe[
-  Eine Zeile mit `tenant_id="obs"` und `cluster="obs"`. Die Zahl ist die Menge der Scrape-Ziele auf obs. Siehst du stattdessen `tenant_id="unbekannt"`, fehlt der Header in `remoteWrite`.
+  Eine Zeile mit `tenant_id="obs"` und `cluster="obs"`. Die Zahl ist die Menge der Scrape-Ziele auf obs, im Labor um die 19. Siehst du stattdessen `tenant_id="unbekannt"`, fehlt der Header in `remoteWrite`.
 ]
 
 Schalte in der Oberfläche die Deduplizierung einmal aus und wieder ein. Ohne Deduplizierung siehst du die Labels `prometheus_replica` und `receive_replica`, mit ihr verschwinden sie. Genau das bewirken die `replica-label`-Argumente.
@@ -305,8 +348,12 @@ rate(prometheus_remote_storage_samples_total{cluster="obs"}[5m])
 rate(prometheus_remote_storage_samples_failed_total{cluster="obs"}[5m])
 ```
 
+Wähle für Kurven vor dem Klick auf *Execute* den Reiter *Graph* unter dem Eingabefeld. Mit `-` und `+` links daneben stellst du den Zeitraum ein.
+
+#bild("bilder/04-query-remote-write.png", [Reiter *Graph*: Prometheus schickt einige tausend Werte pro Sekunde an Receive. Die Kurve beginnt dort, wo Receive gestartet wurde.])
+
 #pruefe[
-  Die erste Kurve liegt dauerhaft über null, die Anzahl hängt von deinem Cluster ab. Die zweite ist leer oder null. Steigen die Fehler, steht der Grund in den Logs von `thanos-receive-0`.
+  Die erste Kurve liegt dauerhaft über null, im Labor bei einigen tausend Werten pro Sekunde. Die zweite ist leer oder null. Steigen die Fehler, steht der Grund in den Logs von `thanos-receive-0`.
 ]
 
 #falle[

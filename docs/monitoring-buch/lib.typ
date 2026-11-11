@@ -78,6 +78,16 @@
   }
 }
 
+// Ein Screenshot mit Rahmen und Unterschrift. Der Pfad ist relativ zu lib.typ,
+// also z. B. "bilder/04-query-mandanten.png". Rote Rahmen im Bild zeigen,
+// wo du etwas eingibst oder klickst.
+#let bild(pfad, unterschrift, breite: 100%) = figure(
+  box(stroke: 0.6pt + linie, radius: 2pt, clip: true, image(pfad, width: breite)),
+  caption: text(font: sans, size: 8.2pt, fill: grau, unterschrift),
+  supplement: [Abbildung],
+  gap: 0.6em,
+)
+
 #let hinweis(titel, farbe, hell, inhalt) = block(
   width: 100%, fill: hell, radius: 3pt, inset: 10pt,
   above: 1.1em, below: 1.1em, breakable: false,
