@@ -3,7 +3,7 @@
 #kapitel(
   [Die Zentrale: Prometheus und Thanos Receive],
   ziel: [Auf obs läuft Prometheus, schreibt seine Metriken an Thanos Receive, und Thanos legt sie dauerhaft in S3 ab. Thanos Query zeigt alles an einer Stelle.],
-  zeit: [75 Minuten, dazu zwei Stunden Wartezeit für den ersten Block in S3],
+  zeit: [75 Minuten, dazu bis zu vier Stunden Wartezeit für den ersten Block in S3],
   braucht: [Kapitel 3 (SeaweedFS mit Bucket `thanos` und Secret `thanos-objstore`)],
 )
 
@@ -362,7 +362,7 @@ Wähle für Kurven vor dem Klick auf *Execute* den Reiter *Graph* unter dem Eing
 
 == Der erste Block in S3
 
-Receive lädt Blöcke alle zwei Stunden hoch. Mach eine Pause oder arbeite mit Kapitel 5 weiter und komm danach zurück.
+Receive schreibt Blöcke von je zwei Stunden. Den ersten Block siehst du trotzdem nicht nach zwei Stunden: Receive prüft nur alle zwei Stunden, ob ein Block fertig ist, und ein Block gilt erst als fertig, wenn der Speicher mehr als anderthalb Blocklängen umfasst, also drei Stunden Daten. Im Labor war der Bucket nach zweieinhalb Stunden noch leer, und das Log zeigte bei jedem Mandanten nur `running periodic head compaction`. Rechne mit rund vier Stunden bis zum ersten Upload. Arbeite in der Zwischenzeit mit den nächsten Kapiteln weiter und komm später zurück.
 
 #cmd("Mac")[```bash
 kubectl --context obs -n monitoring exec deploy/thanos-compact -- \
