@@ -36,7 +36,11 @@ Jede neue Label-Kombination erzeugt einen neuen Stream. Für jeden Stream hält 
   [`app`], [Pod-Label `app.kubernetes.io/name`, sonst `app`], [rund 15],
 )
 
-`pod` ist das einzige Label mit spürbarer Veränderung, weil jeder neue Pod einen neuen Namen bekommt. Das ist gewollt, denn nach dem Pod suchst du am häufigsten. Alles andere bleibt im Text der Zeile. Die Logstufe, also `info` oder `error`, legt Alloy als *strukturierte Metadaten* ab. Sie hängen an der einzelnen Zeile, erzeugen keinen neuen Stream und lassen sich trotzdem filtern.
+`pod` ist das einzige Label mit spürbarer Veränderung, weil jeder neue Pod einen neuen Namen bekommt. Das ist gewollt, denn nach dem Pod suchst du am häufigsten. Alles andere bleibt im Text der Zeile.
+
+In Grafana wirst du drei weitere Labels sehen, die du nicht selbst gesetzt hast. `job` und `instance` hängt Alloy an: `job` ist für alle Pod-Logs gleich, `instance` ist `namespace/pod:container`. `service_name` leitet Loki selbst aus `app` ab. Keines davon erzeugt neue Streams, denn ihr Wert ergibt sich aus den fünf Labels oben.
+
+Die Logstufe, also `info` oder `error`, legt Alloy als *strukturierte Metadaten* mit dem Namen `level` ab. Sie hängen an der einzelnen Zeile, erzeugen keinen neuen Stream und lassen sich trotzdem filtern. Loki rät die Stufe zusätzlich selbst und legt sie als `detected_level` daneben. Meist sind beide gleich. `level` stammt aus deiner Regel in Alloy und ist deshalb der verlässlichere Wert.
 
 #warum[
   Zu viele Streams sind der häufigste Grund, warum Loki langsam wird oder Daten ablehnt. Die Werte-Datei unten begrenzt deshalb jeden Mandanten auf 5000 Streams. Bei Verstoß antwortet Loki mit HTTP 429, und Alloy meldet das im Log. Ein solcher Fehler zeigt fast immer ein falsch gewähltes Label an, kein zu kleines Limit.
@@ -78,6 +82,13 @@ singleBinary:
   `auth_enabled: true` schaltet die Mandanten ein. Jede Anfrage braucht dann den Header `X-Scope-OrgID`, sonst lehnt Loki sie ab. `multi_tenant_queries_enabled` erlaubt Abfragen mit mehreren Mandanten, getrennt durch `|`. Die S3-Schlüssel setzt Loki beim Start aus den Umgebungsvariablen ein, das Chart startet Loki dafür mit `-config.expand-env=true`. Die vollständige Datei schaltet außerdem Gateway, Caches und Canary ab, legt das Schema `v13` fest und konfiguriert den Compactor.
 ])
 
+Die Helm-Charts für Loki und Tempo pflegt inzwischen die Community in einem eigenen Repository, nicht mehr Grafana Labs im Repository `grafana`, aus dem Alloy stammt. Trag es einmal ein:
+
+#cmd("Mac")[```bash
+helm repo add grafana-community https://grafana-community.github.io/helm-charts
+helm repo update grafana-community
+```][Ohne diesen Schritt meldet der nächste Befehl `repo grafana-community not found`.]
+
 #cmd("Mac")[```bash
 helm --kube-context obs upgrade --install loki grafana-community/loki \
   -n monitoring --version 21.0.0 \
@@ -89,7 +100,7 @@ kubectl --context obs -n monitoring logs loki-0 -c loki --tail=30
 ```][Zeigt die letzten Zeilen des Loki-Containers.]
 
 #pruefe[
-  Keine Zeilen mit `level=error`. Meldungen wie `AccessDenied` oder `NoSuchBucket` weisen auf Konto oder Bucket aus Kapitel 3 hin. Hinweise des Rulers auf fehlende Regeln sind bis zum Abschnitt über Alarme normal, der Ordner `/rules` ist noch leer.
+  In den ersten Sekunden nach dem Start meldet Loki `failed to fast-join the memberlist cluster` und `empty ring`. Loki sucht dabei sich selbst über einen DNS-Namen, den Kubernetes erst vergibt, wenn der Pod bereit ist. Das legt sich von allein. Danach kommen keine Zeilen mit `level=error` mehr. Meldungen wie `AccessDenied` oder `NoSuchBucket` weisen auf Konto oder Bucket aus Kapitel 3 hin. Hinweise des Rulers auf fehlende Regeln sind bis zum Abschnitt über Alarme normal, der Ordner `/rules` ist noch leer.
 ]
 
 Jetzt prüfst du die Mandanten. Öffne dafür ein zweites Terminal:
@@ -164,15 +175,22 @@ Auch `obs` schickt über `https://loki.obs.internal` und nicht direkt an den Ser
 Wie in Kapitel 5 liegen alle `.alloy`-Dateien eines Clusters in der ConfigMap `alloy-config`, und Alloy lädt sie gemeinsam. In `app1` und `app2` kommt `logs.alloy` zu `metrics.alloy` dazu:
 
 #cmd("Mac")[```bash
-for c in app1 app2; do
-  kubectl --context $c -n monitoring create configmap alloy-config \
-    --from-file=observability/cluster/alloy/metrics.alloy \
-    --from-file=observability/cluster/alloy/logs.alloy \
-    --dry-run=client -o yaml | kubectl --context $c apply -f -
-  kubectl --context $c -n monitoring rollout restart ds/alloy
-  kubectl --context $c -n monitoring rollout status ds/alloy
-done
-```][Baut die ConfigMap lokal neu, ersetzt die alte, startet Alloy neu und wartet, bis der Pod wieder läuft. Von selbst bemerkt Alloy die Änderung auch, aber erst nach bis zu einer Minute.]
+kubectl --context app1 -n monitoring create configmap alloy-config \
+  --from-file=observability/cluster/alloy/metrics.alloy \
+  --from-file=observability/cluster/alloy/logs.alloy \
+  --dry-run=client -o yaml | kubectl --context app1 apply -f -
+kubectl --context app1 -n monitoring rollout restart ds/alloy
+kubectl --context app1 -n monitoring rollout status ds/alloy
+```][Baut die ConfigMap für app1 lokal neu, ersetzt die alte, startet Alloy neu und wartet, bis der Pod wieder läuft. Von selbst bemerkt Alloy die Änderung auch, aber erst nach bis zu einer Minute.]
+
+#cmd("Mac")[```bash
+kubectl --context app2 -n monitoring create configmap alloy-config \
+  --from-file=observability/cluster/alloy/metrics.alloy \
+  --from-file=observability/cluster/alloy/logs.alloy \
+  --dry-run=client -o yaml | kubectl --context app2 apply -f -
+kubectl --context app2 -n monitoring rollout restart ds/alloy
+kubectl --context app2 -n monitoring rollout status ds/alloy
+```][Dasselbe für app2.]
 
 Auf `obs` läuft Alloy noch gar nicht, denn Metriken sammelt dort Prometheus. Die Voraussetzungen sind aber da: das Secret `obs-remote-auth` mit dem Benutzer `obs` aus Kapitel 5 und die ConfigMap `obs-ca` aus Kapitel 2.
 
@@ -198,14 +216,19 @@ kubectl --context app1 -n monitoring logs ds/alloy -c alloy --tail=50 \
 ]
 
 #cmd("Mac")[```bash
-for t in obs app1 app2; do
-  echo "$t: $(curl -s -H "X-Scope-OrgID: $t" \
-    localhost:3100/loki/api/v1/label/cluster/values)"
-done
+curl -s -H "X-Scope-OrgID: obs"  localhost:3100/loki/api/v1/label/cluster/values
+curl -s -H "X-Scope-OrgID: app1" localhost:3100/loki/api/v1/label/cluster/values
+curl -s -H "X-Scope-OrgID: app2" localhost:3100/loki/api/v1/label/cluster/values
 ```][Fragt für jeden Mandanten die Werte des Labels `cluster` ab. Der Port-Forward aus dem zweiten Terminal muss noch laufen.]
 
 #pruefe[
-  Drei Zeilen, jede mit genau ihrem eigenen Clusternamen, zum Beispiel `app1: {"status":"success","data":["app1"]}`. Jeder Mandant sieht nur seine eigenen Daten.
+  Drei Zeilen, jede mit genau ihrem eigenen Clusternamen:
+  ```
+  {"status":"success","data":["obs"]}
+  {"status":"success","data":["app1"]}
+  {"status":"success","data":["app2"]}
+  ```
+  Jeder Mandant sieht nur seine eigenen Daten. Zum Vergleich: Mit `-H "X-Scope-OrgID: obs|app1|app2"` bekommst du alle drei Werte in einer Antwort.
 ]
 
 #falle[
@@ -245,9 +268,13 @@ kubectl --context obs apply -f observability/grafana/datasources/loki.yaml
 {cluster="app1", namespace="kube-system"}
 ```
 
+#bild("bilder/08-grafana-loki-explore.png", [*Explore* mit der Datenquelle *Loki*: oben die Menge der Zeilen über die Zeit, darunter die Zeilen selbst. Die Warnung von CoreDNS über fehlende `*.override`-Dateien ist harmlos, k3s sucht diese Dateien immer.])
+
 #pruefe[
-  Log-Zeilen von CoreDNS, Traefik und dem Metrics-Server aus `app1`. Klappst du eine Zeile auf, stehen darunter die Labels und, falls erkannt, `level` als strukturierte Metadaten. Zusätzlich zeigt Grafana das Label `__tenant_id__`. Loki fügt es bei Abfragen über mehrere Mandanten hinzu.
+  Log-Zeilen von CoreDNS, Traefik und dem Metrics-Server aus `app1`. Klappst du eine Zeile auf, stehen darunter die Labels und die strukturierten Metadaten `level` und `detected_level`. Zusätzlich zeigt Grafana das Label `__tenant_id__`. Loki fügt es bei Abfragen über mehrere Mandanten hinzu.
 ]
+
+Über *Label browser* über dem Eingabefeld klickst du dir Abfragen zusammen, ohne die Labels auswendig zu kennen. Schalte für LogQL wie bei PromQL auf *Code*.
 
 == LogQL in vier Schritten
 
@@ -286,6 +313,8 @@ sum by (cluster, namespace) (
 ```
 
 Mit `| line_format "{{.msg}}"` zeigst du am Ende nur noch die Felder, die dich interessieren.
+
+#bild("bilder/08-grafana-loki-zaehlen.png", [Die Zähl-Abfrage aus Schritt 4 in *Explore*: Aus Log-Zeilen wird eine Kurve pro Cluster und Namespace. Genau so eine Kurve wertet gleich der Loki-Ruler aus.])
 
 #falle[
   `{cluster="app1"} |= "error"` liest alle Logs von `app1` im gewählten Zeitraum. Bei einer Stunde ist das im Labor kein Problem, bei 30 Tagen schon. Schränke zuerst über Labels ein, dann über Text. Grafana zeigt unter *Query inspector* an, wie viele Bytes Loki gelesen hat.
@@ -394,7 +423,7 @@ curl -s -H "X-Scope-OrgID: app1" \
 ```][Fragt den Ruler nach aktiven Alarmen des Mandanten `app1`. Der Port-Forward muss noch laufen.]
 
 #pruefe[
-  Nach zwei bis drei Minuten ein Alarm `KubernetesWarnEvent` mit `cluster: "app1"`, `namespace: "default"` und `reason: "BackOff"`, zuerst im Zustand `pending`. Nach weiteren fünf Minuten steht er in Mailpit und im Alertmanager. Daneben feuert meist auch der Metrik-Alarm aus Kapitel 7 für den Crashloop. Das ist kein Fehler: Zwei Signale bestätigen dasselbe Problem.
+  Nach etwa einer Minute ein Alarm `KubernetesWarnEvent` mit `cluster: "app1"`, `namespace: "default"` und `reason: "BackOff"`, zuerst im Zustand `pending`. Im Labor wechselte er nach 6 Minuten auf `firing`, 30 Sekunden später lag in Mailpit `[FIRING:1] KubernetesWarnEvent app1 (default loki BackOff warning)`. Kommt keine Mail, obwohl der Alarm feuert, schau im Alertmanager nach: Eine noch laufende Silence aus Kapitel 7 auf `cluster="app1"` schaltet ihn stumm. Daneben feuert meist auch der Metrik-Alarm aus Kapitel 7 für den Crashloop. Das ist kein Fehler: Zwei Signale bestätigen dasselbe Problem.
 ]
 
 #cmd("Mac")[```bash
