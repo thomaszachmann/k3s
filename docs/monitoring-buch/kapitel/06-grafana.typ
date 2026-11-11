@@ -175,7 +175,12 @@ kubectl --context obs -n monitoring logs deploy/kps-grafana \
 ```][Zeigt das Protokoll des Datenquellen-Sidecars. Der Containername `grafana-sc-datasources` stammt aus dem Grafana-Chart.]
 
 #pruefe[
-  Zeilen, in denen der Sidecar `thanos.yaml` und `alertmanager.yaml` nach `/etc/grafana/provisioning/datasources/` schreibt, außerdem die Datei des Charts für die lokale Prometheus-Datenquelle. Danach ruft er `/api/admin/provisioning/datasources/reload` auf und meldet den Statuscode 200.
+  Zeilen, in denen der Sidecar `thanos.yaml` und `alertmanager.yaml` nach `/etc/grafana/provisioning/datasources/` schreibt, außerdem `datasource.yaml`, die Datei des Charts für die lokale Prometheus-Datenquelle. Danach ruft er Grafana auf:
+  ```
+  "msg": "None sent to http://localhost:3000/api/admin/provisioning/datasources/reload.
+          Response: 200 OK {\"message\":\"Datasources config reloaded\"}"
+  ```
+  Davor stehen oft einige `WARNING ... Retrying`-Zeilen. Der Sidecar startet schneller als Grafana und versucht es einfach erneut, das ist harmlos.
 ]
 
 == Der erste Login
@@ -186,6 +191,10 @@ Die Namen unter `obs.internal` hast du in Kapitel 2 in `/etc/hosts` eingetragen,
 kubectl --context obs -n monitoring get secret grafana-admin \
   -o jsonpath='{.data.admin-password}' | base64 -d | pbcopy
 ```][Kopiert das Passwort in die Zwischenablage, ohne es anzuzeigen. Öffne dann #link("https://grafana.obs.internal") und melde dich als `admin` an.]
+
+#bild("bilder/06-grafana-login.png", [Die Anmeldeseite von Grafana: oben `admin` eintragen, darunter das Passwort mit `Cmd-V` einfügen, dann *Log in*.], breite: 80%)
+
+Zeigt der Browser stattdessen eine Zertifikatswarnung, vertraut er deiner CA noch nicht. Hol den optionalen Schritt mit dem Schlüsselbund aus Kapitel 2 nach und lade die Seite neu.
 
 Dieselbe Prüfung geht ohne Browser über die HTTP-API von Grafana:
 
@@ -201,8 +210,18 @@ curl -s --cacert observability/tls/ca.crt -u "admin:$GF_PW" \
 ```][Listet alle Datenquellen. `--cacert` prüft das Zertifikat gegen deine eigene CA, statt die Prüfung mit `-k` abzuschalten.]
 
 #pruefe[
-  Drei Zeilen: `Thanos prometheus Standard=true`, `Prometheus prometheus Standard=false` und `Alertmanager alertmanager Standard=false`. In der Oberfläche zeigt *Connections → Data sources* dieselbe Liste, jeweils mit dem Hinweis, dass die Datenquelle per Provisioning angelegt wurde und nicht bearbeitet werden kann. Unter *Dashboards* gibt es den Ordner *Kubernetes*.
+  Drei Zeilen, alphabetisch sortiert:
+  ```
+  Alertmanager  alertmanager  Standard=false
+  Prometheus    prometheus    Standard=false
+  Thanos        prometheus    Standard=true
+  ```
+  Unter *Dashboards* gibt es den Ordner *Kubernetes*.
 ]
+
+In der Oberfläche findest du dieselbe Liste im Menü links unter *Connections → Data sources*:
+
+#bild("bilder/06-grafana-datenquellen.png", [*Connections → Data sources*: Thanos trägt das Etikett `default`. Klickst du eine Datenquelle an, steht oben der Hinweis, dass sie per Provisioning angelegt wurde und sich nicht bearbeiten lässt.])
 
 #cmd("Mac")[```bash
 unset GF_PW
@@ -210,11 +229,13 @@ unset GF_PW
 
 == Eine Abfrage über alle Cluster
 
-Öffne *Explore*, wähle oben die Datenquelle *Thanos* und gib ein:
+Klicke im Menü links auf *Explore*. Oben links wählst du die Datenquelle, darunter liegt das Eingabefeld für die Abfrage. Steht dort ein Schalter *Builder* und *Code*, wähle *Code*, dann kannst du PromQL direkt tippen. Wähle *Thanos*, gib diese Abfrage ein und drücke `Shift-Enter` oder den blauen Knopf oben rechts:
 
 ```promql
 count by (cluster) (up)
 ```
+
+#bild("bilder/06-grafana-explore.png", [*Explore*: Datenquelle und Eingabefeld sind rot markiert. Der Graph zeigt eine Linie pro Cluster, die Tabelle darunter den aktuellen Wert.])
 
 #pruefe[
   Drei Zeilen: `obs`, `app1` und `app2`, jeweils mit der Zahl der Scrape-Targets. Fehlt ein Cluster, liegt das Problem vor Grafana. Prüfe dann zuerst Kapitel 5.
@@ -222,7 +243,11 @@ count by (cluster) (up)
 
 Wechselst du auf die Datenquelle *Prometheus*, siehst du nur `obs`. Das ist der lokale Prometheus mit seinen sechs Stunden Daten. Er ist praktisch, wenn du wissen willst, ob ein Fehler im Remote Write oder in Thanos liegt.
 
-Öffne nun im Ordner *Kubernetes* das Dashboard *Kubernetes / Compute Resources / Cluster*. Oben findest du die Auswahl *cluster*. Stell sie auf `app1`. Einige Panels bleiben dabei leer. Warum das so ist und wie die eigenen Dashboards das vermeiden, steht in Kapitel 10.
+Öffne nun über *Dashboards* den Ordner *Kubernetes* und darin das Dashboard *Kubernetes / Compute Resources / Cluster*. Oben findest du die Auswahl *cluster*. Stell sie auf `app1`.
+
+#bild("bilder/06-grafana-dashboard-cluster.png", [Die Auswahl *cluster* ist rot markiert. Für `app1` bleiben die oberen Kacheln und *CPU Usage* leer, *CPU Quota* und *Memory* zeigen Daten.])
+
+Die leeren Panels sind kein Fehler deines Aufbaus. Sie nutzen Aufnahmeregeln, die nur der Prometheus auf obs auswertet, also nur für `cluster="obs"`. Wie die eigenen Dashboards das vermeiden, steht in Kapitel 10.
 
 == Ändern, ohne zu klicken
 
